@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TxType {
+  DEBIT
+  CREDIT
+  ROLLBACK
+}
+
+enum TxStatus {
+  PENDING
+  APPLIED
+  REVERSED
+  FAILED
+}
+
+model Operator {
+  id            String   @id @default(uuid())
+  name          String
+  apiKey        String   @unique
+  apiSecretHash String
+  apiSecretEnc  String
+  ipWhitelist   String   @default("[]") // JSON array of CIDR/IP strings
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  players      Player[]
+  wallets      Wallet[] // ✅ inverse of Wallet.operator
+  rounds       GameRound[]
+  transactions Transaction[]
+  auditLogs    AuditLog[]
+  idempotency  IdempotencyKey[]
+}
+
+model Player {
+  id         String   @id @default(uuid())
+  operatorId String
+  externalId String // operator's player id
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+
+  // Relations
+  wallets      Wallet[]
+  transactions Transaction[] // ✅ inverse of Transaction.player
+  rounds       GameRound[] // ✅ inverse of GameRound.player
+
+  @@unique([operatorId, externalId])
+}
+
+model Wallet {
+  id         String   @id @default(uuid())
+  operatorId String
+  playerId   String
+  currency   String // ISO or token symbol e.g. USD, BRL, EUR, USDT
+  balance    Decimal  @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+  player   Player   @relation(fields: [playerId], references: [id])
+
+  // Relations
+  txs Transaction[]
+
+  @@unique([playerId, currency])
+  @@index([operatorId])
+}
+
+model Transaction {
+  id             String    @id @default(uuid())
+  operatorId     String
+  playerId       String
+  walletId       String
+  currency       String
+  type           TxType
+  status         TxStatus  @default(PENDING)
+  amount         Decimal
+  referenceId    String? // external reference
+  idempotencyKey String?
+  roundId        String?
+  meta           String    @default("{}") // JSON string
+  createdAt      DateTime  @default(now())
+  appliedAt      DateTime?
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+  player   Player   @relation(fields: [playerId], references: [id])
+  wallet   Wallet   @relation(fields: [walletId], references: [id])
+
+  @@index([operatorId, playerId, createdAt])
+}
+
+model GameRound {
+  id             String    @id @default(uuid())
+  operatorId     String
+  playerId       String
+  gameCode       String
+  betAmount      Decimal
+  winAmount      Decimal   @default(0)
+  currency       String
+  status         String    @default("CREATED") // CREATED, SETTLED, CANCELED
+  serverSeed     String
+  serverSeedHash String
+  clientSeed     String
+  nonce          Int       @default(0)
+  result         String    @default("{}") // JSON string
+  createdAt      DateTime  @default(now())
+  settledAt      DateTime?
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+  player   Player   @relation(fields: [playerId], references: [id])
+
+  @@index([operatorId, gameCode, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  operatorId String
+  action     String
+  ip         String
+  userAgent  String?
+  requestId  String
+  details    String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+
+  @@index([operatorId, createdAt])
+}
+
+model IdempotencyKey {
+  id          String   @id @default(uuid())
+  operatorId  String
+  key         String
+  endpoint    String
+  requestHash String
+  response    String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+
+  @@unique([operatorId, key])
+  @@index([operatorId, createdAt])
+}

@@ -1,0 +1,83 @@
+/**
+ * ZENYX Provider DB additions.
+ * Merge into your existing prisma/schema.prisma.
+ */
+model ProviderGame {
+  id            String   @id
+  name          String
+  kind          String
+  rtpTarget     Float
+  volatility    String
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rounds        ProviderRound[]
+}
+
+model ProviderRound {
+  id            String   @id
+  operatorId    String
+  playerId      String
+  gameId        String
+  currency      String
+  betMicro      BigInt
+  winMicro      BigInt
+  state         String
+  serverSeedHash String
+  clientSeed    String
+  nonce         Int
+  startedAt     DateTime @default(now())
+  endedAt       DateTime?
+
+  game          ProviderGame @relation(fields: [gameId], references: [id])
+  events        ProviderEvent[]
+  spins         ProviderSpin[]
+  fairness      ProviderFairness?
+}
+
+model ProviderSpin {
+  id         String   @id
+  roundId    String
+  index      Int
+  betMicro   BigInt
+  winMicro   BigInt
+  createdAt  DateTime @default(now())
+
+  round      ProviderRound @relation(fields: [roundId], references: [id])
+}
+
+model ProviderEvent {
+  id        String   @id
+  roundId   String
+  seq       Int
+  type      String
+  ts        DateTime
+  dataJson  Json
+
+  round     ProviderRound @relation(fields: [roundId], references: [id])
+
+  @@index([roundId, seq])
+}
+
+model ProviderFairness {
+  id          String @id
+  roundId     String @unique
+  serverSeed  String
+  serverSeedHash String
+  clientSeed  String
+  nonce       Int
+  createdAt   DateTime @default(now())
+
+  round       ProviderRound @relation(fields: [roundId], references: [id])
+}
+
+model ProviderRtpReport {
+  id        String   @id
+  gameId    String
+  spins     Int
+  betMicro  BigInt
+  winMicro  BigInt
+  rtp       Float
+  createdAt DateTime @default(now())
+}

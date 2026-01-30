@@ -1,0 +1,70 @@
+Structure du dossier
+Le numéro de série du volume est A8C7-C3AD
+C:\USERS\TOUSS\ZENYX-GAMES-PROVIDER\SRC
+|   app.module.ts
+|   main.ts
+|   
++---common
+|   +---health
+|   |       health.controller.ts
+|   |       health.module.ts
+|   |       
+|   +---prisma
+|   |       prisma.module.ts
+|   |       prisma.service.ts
+|   |       
+|   +---redis
+|   |       redis.module.ts
+|   |       redis.service.ts
+|   |       
+|   \---security
+|           aes.util.ts
+|           crypto.util.ts
+|           ip.util.ts
+|           
++---games
+|   |   games.controller.ts
+|   |   games.module.ts
+|   |   games.service.ts
+|   |   main-zenyx.ts
+|   |   
+|   +---dto
+|   |       game.dto.ts
+|   |       
+|   +---engine
+|   |       engine.module.ts
+|   |       fairness.service.ts
+|   |       game.interface.ts
+|   |       rng.service.ts
+|   |       
+|   \---slots
+|       \---fruit_star
+|               game.config.ts
+|               payout.table.ts
+|               slot.engine.ts
+|               slot.module.ts
+|               slot.service.ts
+|               
++---logs
+|       audit.service.ts
+|       logs.module.ts
+|       
++---operator
+|   |   operator.controller.ts
+|   |   operator.guard.ts
+|   |   operator.module.ts
+|   |   operator.service.ts
+|   |   
+|   \---dto
+|           create-operator.dto.ts
+|           rotate-secret.dto.ts
+|           update-whitelist.dto.ts
+|           
+\---wallet
+    |   wallet.controller.ts
+    |   wallet.module.ts
+    |   wallet.service.ts
+    |   
+    \---dto
+            wallet.dto.ts
+            
