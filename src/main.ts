@@ -9,15 +9,25 @@ import { ConfigService } from '@nestjs/config';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
 
+  // Security + perf
   app.use(helmet());
   app.use(compression());
-  app.setGlobalPrefix(process.env.API_BASE_PATH || '/v1');
 
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Global prefix
+  const apiBasePath = process.env.API_BASE_PATH || '/v1';
+  app.setGlobalPrefix(apiBasePath);
 
-  const config = app.get(ConfigService);
+  // Validation (DTO)
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    }),
+  );
+
+  // Swagger
   const swaggerPath = 'docs';
-
   const swaggerConfig = new DocumentBuilder()
     .setTitle('ZENYX GAMES Provider API')
     .setDescription('Production-ready casino game provider API (operators only).')
@@ -30,11 +40,22 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup(swaggerPath, app, document);
 
-  const port = config.get<number>('PORT', 3000);
-  await app.listen(port);
+  // Port: Railway -> process.env.PORT
+  const config = app.get(ConfigService);
+  const port = Number(process.env.PORT ?? config.get<number>('PORT') ?? 3000);
+
+  // IMPORTANT: Cloud/Railway needs 0.0.0.0 (not localhost)
+  await app.listen(port, '0.0.0.0');
+
+  // Logs
+  const publicUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://0.0.0.0:${port}`;
+
   // eslint-disable-next-line no-console
-  console.log(`ZENYX Provider API running on http://localhost:${port}${process.env.API_BASE_PATH || '/v1'}`);
-  console.log(`Swagger on http://localhost:${port}/${swaggerPath}`);
+  console.log(`ZENYX Provider API running on ${publicUrl}${apiBasePath}`);
+  // eslint-disable-next-line no-console
+  console.log(`Swagger on ${publicUrl}/${swaggerPath}`);
 }
 
 bootstrap();
