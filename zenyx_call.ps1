@@ -1,48 +1,62 @@
-function Get-Sha256Hex([string]$text) {
+param(
+  [Parameter(Mandatory=$true)][string]$ApiKey,
+  [Parameter(Mandatory=$true)][string]$ApiSecret,
+  [string]$BaseUrl = "https://zenyx-games-provider-production.up.railway.app",
+  [string]$Method = "GET",
+  [string]$Path = "/v1/provider/games",
+  [string]$BodyJson = "{}"
+)
+
+function Sha256Hex([string]$text) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
-  ($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
+  $hash = $sha.ComputeHash($bytes)
+  ($hash | ForEach-Object { $_.ToString("x2") }) -join ""
 }
 
-function Get-HmacSha256Hex([string]$secret, [string]$payload) {
+function HmacSha256Hex([string]$key, [string]$text) {
   $hmac = New-Object System.Security.Cryptography.HMACSHA256
-  $hmac.Key = [System.Text.Encoding]::UTF8.GetBytes($secret)
-  $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
-  ($hmac.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
+  $hmac.Key = [System.Text.Encoding]::UTF8.GetBytes($key)
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+  $hash = $hmac.ComputeHash($bytes)
+  ($hash | ForEach-Object { $_.ToString("x2") }) -join ""
 }
 
-function Invoke-ZenyxApi {
-  param(
-    [Parameter(Mandatory=$true)][string]$ApiKey,
-    [Parameter(Mandatory=$true)][string]$ApiSecret,
-    [Parameter(Mandatory=$true)][ValidateSet("GET","POST")][string]$Method,
-    [Parameter(Mandatory=$true)][string]$Url,
-    [Parameter(Mandatory=$false)][object]$BodyObj
-  )
+$methodUpper = $Method.ToUpper()
+$ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
-  $ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+# ---- BODY STABLE (doit matcher JSON.stringify(req.body)) ----
+if ($methodUpper -eq "GET" -or [string]::IsNullOrWhiteSpace($BodyJson)) {
+  $BodyStable = "{}"
+} else {
+  # Convert JSON -> object -> JSON compact (équivalent JSON.stringify)
+  $BodyStable = ($BodyJson | ConvertFrom-Json) | ConvertTo-Json -Depth 50 -Compress
+}
 
-  $bodyJson = "{}"
-  if ($BodyObj -ne $null) {
-    $bodyJson = ($BodyObj | ConvertTo-Json -Depth 20 -Compress)
-  }
+$bodyHash = Sha256Hex $BodyStable
 
-  $uri = [System.Uri]$Url
-  $pathWithQuery = $uri.PathAndQuery
+# IMPORTANT: doit matcher req.originalUrl (path seulement, sans domaine)
+$payload = "$ts.$methodUpper.$Path.$bodyHash"
+$sig = HmacSha256Hex $ApiSecret $payload
 
-  $bodyHash = Get-Sha256Hex $bodyJson
-  $payload = "$ts.$Method.$pathWithQuery.$bodyHash"
-  $sig = Get-HmacSha256Hex $ApiSecret $payload
+$headers = @{
+  "X-API-KEY"    = $ApiKey
+  "X-SIGNATURE"  = $sig
+  "X-TIMESTAMP"  = "$ts"
+  "X-REQUEST-ID" = "ps-" + [Guid]::NewGuid().ToString("N")
+  "user-agent"   = "ps"
+  "accept"       = "application/json"
+}
 
-  $headers = @{
-    "X-API-KEY"   = $ApiKey
-    "X-TIMESTAMP" = "$ts"
-    "X-SIGNATURE" = $sig
-  }
+$url = "$BaseUrl$Path"
 
-  if ($Method -eq "GET") {
-    return Invoke-RestMethod -Method Get -Uri $Url -Headers $headers
-  } else {
-    return Invoke-RestMethod -Method Post -Uri $Url -Headers $headers -Body $bodyJson -ContentType "application/json"
-  }
+Write-Host "URL:" $url
+Write-Host "BodyStable:" $BodyStable
+Write-Host "Payload:" $payload
+Write-Host "Signature:" $sig
+
+if ($methodUpper -eq "GET") {
+  Invoke-RestMethod -Method Get -Uri $url -Headers $headers
+} else {
+  Invoke-RestMethod -Method $methodUpper -Uri $url -Headers $headers -Body $BodyStable -ContentType "application/json"
 }
