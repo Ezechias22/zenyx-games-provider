@@ -34,8 +34,9 @@ coverage/
 ####################################
 # On versionne les migrations en production (Railway en a besoin)
 # Donc on NE doit PAS ignorer prisma/migrations
-# prisma/migrations/
-# Mais on peut ignorer les fichiers temporaires Prisma si besoin
+ prisma/migrations/
+!prisma/migrations/.gitkeep
+
 prisma/.env
 
 ####################################
