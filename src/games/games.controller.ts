@@ -23,25 +23,30 @@ export class GamesController {
 
   @Post('init')
   async init(@Body() dto: GameInitDto, @Req() req: any) {
-    // Accept aliases
     const gameCode = dto.gameCode ?? dto.gameId;
     const playerExternalId = dto.playerExternalId ?? dto.playerId;
 
-    if (!gameCode || gameCode.length < 2) {
+    if (!gameCode || typeof gameCode !== 'string' || gameCode.length < 2) {
       throw new BadRequestException('Missing gameCode (or gameId)');
     }
-    if (!playerExternalId || playerExternalId.length < 1) {
+    if (
+      !playerExternalId ||
+      typeof playerExternalId !== 'string' ||
+      playerExternalId.length < 1
+    ) {
       throw new BadRequestException('Missing playerExternalId (or playerId)');
     }
+    if (!dto.currency || typeof dto.currency !== 'string' || dto.currency.length < 2) {
+      throw new BadRequestException('Missing currency');
+    }
 
-    // Normalize payload for the service (keep same DTO shape)
-    const normalized: GameInitDto = {
-      ...dto,
+    // ✅ DTO normalisé: TS sait que c’est string
+    return this.gamesService.init(req.operator.id, {
       gameCode,
       playerExternalId,
-    };
-
-    return this.gamesService.init(req.operator.id, normalized);
+      currency: dto.currency,
+      clientSeed: dto.clientSeed,
+    });
   }
 
   @Post('play')

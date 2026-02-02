@@ -5,7 +5,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { FairnessService } from './engine/fairness.service';
 import { sha256Hex } from '../common/security/crypto.util';
 import { SlotFruitStarService } from './slots/fruit_star/slot.service';
-import { GameInitDto, GamePlayDto } from './dto/game.dto';
+import { GameInitNormalizedDto, GamePlayDto } from './dto/game.dto';
 
 function stableNum(n: number): number {
   if (!Number.isFinite(n) || n < 0) throw new BadRequestException('Invalid number');
@@ -27,7 +27,7 @@ export class GamesService {
     throw new BadRequestException('Unknown gameCode');
   }
 
-  async init(operatorId: string, dto: GameInitDto) {
+   async init(operatorId: string, dto: GameInitNormalizedDto) {
     const game = this.getGame(dto.gameCode);
     const { serverSeed, serverSeedHash } = this.fairness.generateServerSeed();
     const clientSeed = dto.clientSeed || `player:${dto.playerExternalId}`;
