@@ -12,6 +12,20 @@ function stableNum(n: number): number {
   return n;
 }
 
+// ✅ IDs EXACTS renvoyés par /v1/provider/games
+const SLOT_GAMES = new Set([
+  'fruit_classic',
+  'egypt_riches',
+  'jungle_wild',
+  'luxury_gold',
+  'diamond_rush',
+  'fire_reels',
+  'mystic_fortune',
+]);
+
+const CRASH_GAMES = new Set(['crash_multiplier']);
+const DICE_GAMES = new Set(['dice_over_under']);
+
 @Injectable()
 export class GamesService {
   constructor(
@@ -22,29 +36,56 @@ export class GamesService {
     private slotFruit: SlotFruitStarService,
   ) {}
 
+  /**
+   * 🔥 IMPORTANT
+   * Pour l’instant tu as seulement 1 moteur "slotFruit".
+   * Donc on mappe tous les SLOT vers ce moteur (temporaire).
+   * CRASH/DICE -> pas encore implémentés.
+   */
   private getGame(gameCode: string) {
-    if (gameCode === this.slotFruit.gameCode) return this.slotFruit;
+    const code = (gameCode || '').trim();
+
+    if (SLOT_GAMES.has(code)) {
+      // On réutilise le même engine slotFruit pour tous les slots
+      return this.slotFruit;
+    }
+
+    if (CRASH_GAMES.has(code)) {
+      throw new BadRequestException('Game engine not implemented yet for CRASH');
+    }
+
+    if (DICE_GAMES.has(code)) {
+      throw new BadRequestException('Game engine not implemented yet for DICE');
+    }
+
     throw new BadRequestException('Unknown gameCode');
   }
 
-   async init(operatorId: string, dto: GameInitNormalizedDto) {
-    const game = this.getGame(dto.gameCode);
+  async init(operatorId: string, dto: GameInitNormalizedDto) {
+    // ✅ dto.gameCode est obligatoire, mais TS peut être strict -> on force string
+    const gameCode = (dto.gameCode || '').trim();
+    const playerExternalId = (dto.playerExternalId || '').trim();
+    const currency = (dto.currency || '').trim();
+
+    const game = this.getGame(gameCode);
+
     const { serverSeed, serverSeedHash } = this.fairness.generateServerSeed();
-    const clientSeed = dto.clientSeed || `player:${dto.playerExternalId}`;
+    const clientSeed = dto.clientSeed || `player:${playerExternalId}`;
+
     const player = await this.prisma.player.upsert({
-      where: { operatorId_externalId: { operatorId, externalId: dto.playerExternalId } },
+      where: { operatorId_externalId: { operatorId, externalId: playerExternalId } },
       update: {},
-      create: { operatorId, externalId: dto.playerExternalId },
+      create: { operatorId, externalId: playerExternalId },
     });
 
     const round = await this.prisma.gameRound.create({
       data: {
         operatorId,
         playerId: player.id,
-        gameCode: dto.gameCode,
+        gameCode: gameCode,
         betAmount: '0',
         winAmount: '0',
-        currency: dto.currency,
+        currency: currency,
         serverSeed,
         serverSeedHash,
         clientSeed,
@@ -54,12 +95,12 @@ export class GamesService {
       },
     });
 
-    const bal = await this.wallet.getBalance(operatorId, dto.playerExternalId, dto.currency);
+    const bal = await this.wallet.getBalance(operatorId, playerExternalId, currency);
 
     return {
       provider: 'ZENYX GAMES',
       roundId: round.id,
-      gameCode: dto.gameCode,
+      gameCode: gameCode,
       rtp: game.rtp,
       volatility: game.volatility,
       fairness: { serverSeedHash },
@@ -98,7 +139,7 @@ export class GamesService {
       const player = await this.prisma.player.findUnique({ where: { id: round.playerId } });
       if (!player) throw new BadRequestException('Player not found');
 
-      const debitRes = await this.wallet.debit(operatorId, player.externalId, round.currency, bet, {
+      await this.wallet.debit(operatorId, player.externalId, round.currency, bet, {
         idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:debit` : undefined,
         referenceId: `round:${round.id}`,
         meta: { gameCode: round.gameCode },
@@ -163,7 +204,6 @@ export class GamesService {
         });
       }
 
-      // Best-effort store tx round linkage
       return response;
     } finally {
       await this.redis.releaseLock(lockKey);
@@ -180,7 +220,7 @@ export class GamesService {
       status: round.status,
       fairness: {
         serverSeedHash: round.serverSeedHash,
-        serverSeed: round.serverSeed, // revealed (operators can expose to players after settlement)
+        serverSeed: round.serverSeed,
         clientSeed: round.clientSeed,
         nonce: round.nonce,
       },
