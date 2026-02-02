@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { OperatorAuthGuard } from '../operator/operator.guard';
 import { GamesService } from './games.service';
@@ -14,7 +23,25 @@ export class GamesController {
 
   @Post('init')
   async init(@Body() dto: GameInitDto, @Req() req: any) {
-    return this.gamesService.init(req.operator.id, dto);
+    // Accept aliases
+    const gameCode = dto.gameCode ?? dto.gameId;
+    const playerExternalId = dto.playerExternalId ?? dto.playerId;
+
+    if (!gameCode || gameCode.length < 2) {
+      throw new BadRequestException('Missing gameCode (or gameId)');
+    }
+    if (!playerExternalId || playerExternalId.length < 1) {
+      throw new BadRequestException('Missing playerExternalId (or playerId)');
+    }
+
+    // Normalize payload for the service (keep same DTO shape)
+    const normalized: GameInitDto = {
+      ...dto,
+      gameCode,
+      playerExternalId,
+    };
+
+    return this.gamesService.init(req.operator.id, normalized);
   }
 
   @Post('play')
