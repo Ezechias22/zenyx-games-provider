@@ -12,7 +12,10 @@ import { GamesModule } from './games/games.module';
 import { LogsModule } from './logs/logs.module';
 import { ProviderModule } from './provider/provider.module';
 
-// ✅ ADMIN
+// ✅ PUBLIC (session + launchUrl)
+import { PublicModule } from './public/public.module';
+
+// ✅ ADMIN (master-token only)
 import { AdminModule } from './admin/admin.module';
 
 @Module({
@@ -37,7 +40,10 @@ import { AdminModule } from './admin/admin.module';
     GamesModule,
     ProviderModule,
 
-    // 🔐 admin (master-token only)
+    // ✅ public game-launch/session endpoints (token-based)
+    PublicModule,
+
+    // 🔐 admin endpoints (master-token only)
     AdminModule,
   ],
 })

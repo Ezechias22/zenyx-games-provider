@@ -41,6 +41,40 @@ export class RedisService implements OnModuleDestroy {
     return this.client;
   }
 
+  // ✅ JSON helpers (pour session tokens / public module)
+  async setJson(key: string, value: any, ttlSeconds?: number): Promise<void> {
+    try {
+      const payload = JSON.stringify(value ?? null);
+
+      if (ttlSeconds && Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+        await this.client.set(key, payload, 'EX', Math.floor(ttlSeconds));
+      } else {
+        await this.client.set(key, payload);
+      }
+    } catch (err: unknown) {
+      this.logger.error(`setJson failed (${key}): ${errMsg(err)}`);
+      throw err;
+    }
+  }
+
+  async getJson<T = any>(key: string): Promise<T | null> {
+    try {
+      const raw = await this.client.get(key);
+      if (!raw) return null;
+
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        // si quelqu’un a stocké du texte non JSON
+        return raw as unknown as T;
+      }
+    } catch (err: unknown) {
+      this.logger.error(`getJson failed (${key}): ${errMsg(err)}`);
+      return null;
+    }
+  }
+
+  // ✅ Locks (déjà ok)
   async acquireLock(key: string, ttlMs: number): Promise<boolean> {
     try {
       const res = await this.client.set(key, '1', 'PX', ttlMs, 'NX');
