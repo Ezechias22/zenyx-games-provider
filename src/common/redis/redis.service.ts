@@ -35,6 +35,7 @@ export class RedisService implements OnModuleDestroy {
     this.client.on('ready', () => this.logger.log('Redis ready'));
     this.client.on('reconnecting', () => this.logger.warn('Redis reconnecting...'));
     this.client.on('end', () => this.logger.warn('Redis connection closed'));
+    this.client.on('close', () => this.logger.warn('Redis connection close event'));
   }
 
   getClient(): Redis {
@@ -74,7 +75,15 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
-  // ✅ Locks (déjà ok)
+  async del(key: string): Promise<void> {
+    try {
+      await this.client.del(key);
+    } catch (err: unknown) {
+      this.logger.error(`del failed (${key}): ${errMsg(err)}`);
+    }
+  }
+
+  // ✅ Locks
   async acquireLock(key: string, ttlMs: number): Promise<boolean> {
     try {
       const res = await this.client.set(key, '1', 'PX', ttlMs, 'NX');
