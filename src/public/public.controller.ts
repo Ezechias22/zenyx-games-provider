@@ -12,11 +12,12 @@ import { RedisService } from '../common/redis/redis.service';
 import { GamesService } from '../games/games.service';
 import { PublicGuard } from './public.guard';
 import { PublicPlayDto, PublicSessionDto } from './dto/public.dto';
-import crypto from 'crypto';
+import { randomBytes } from 'crypto';
 
 function randomId(): string {
-  return crypto.randomBytes(16).toString('hex');
+  return randomBytes(16).toString('hex');
 }
+
 
 @ApiTags('public')
 @ApiSecurity('x-public-token')
