@@ -1,6 +1,11 @@
 param(
   [Parameter(Mandatory=$true)][string]$ApiKey,
   [Parameter(Mandatory=$true)][string]$ApiSecret,
+
+  # ✅ NEW (optional) - for /v1/public/*
+  [string]$PublicToken,
+  [string]$OperatorKey,
+
   [string]$BaseUrl = "https://zenyx-games-provider-production.up.railway.app",
   [string]$Method = "GET",
   [string]$Path = "/v1/provider/games",
@@ -48,12 +53,22 @@ $headers = @{
   "accept"       = "application/json"
 }
 
+# ✅ Add public headers if provided
+if (-not [string]::IsNullOrWhiteSpace($PublicToken)) {
+  $headers["x-public-token"] = $PublicToken
+}
+if (-not [string]::IsNullOrWhiteSpace($OperatorKey)) {
+  $headers["x-operator-key"] = $OperatorKey
+}
+
 $url = "$BaseUrl$Path"
 
 Write-Host "URL:" $url
 Write-Host "BodyStable:" $BodyStable
 Write-Host "Payload:" $payload
 Write-Host "Signature:" $sig
+if ($PublicToken) { Write-Host "x-public-token:" $PublicToken }
+if ($OperatorKey) { Write-Host "x-operator-key:" $OperatorKey }
 
 if ($methodUpper -eq "GET") {
   Invoke-RestMethod -Method Get -Uri $url -Headers $headers
