@@ -7,6 +7,9 @@ import { WalletModule } from '../wallet/wallet.module';
 import { EngineModule } from './engine/engine.module';
 import { OperatorModule } from '../operator/operator.module';
 
+import { CrashService } from './crash/crash.service';
+import { DiceService } from './dice/dice.service';
+
 @Module({
   imports: [
     OperatorModule, // nécessaire pour OperatorAuthGuard
@@ -15,7 +18,7 @@ import { OperatorModule } from '../operator/operator.module';
     SlotFruitStarModule,
   ],
   controllers: [GamesController],
-  providers: [GamesService],
-  exports: [GamesService], // ✅ LIGNE CLÉ (OBLIGATOIRE)
+  providers: [GamesService, CrashService, DiceService],
+  exports: [GamesService],
 })
 export class GamesModule {}

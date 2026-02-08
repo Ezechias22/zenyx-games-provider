@@ -4,7 +4,11 @@ import { RedisService } from '../common/redis/redis.service';
 import { WalletService } from '../wallet/wallet.service';
 import { FairnessService } from './engine/fairness.service';
 import { sha256Hex } from '../common/security/crypto.util';
+
 import { SlotFruitStarService } from './slots/fruit_star/slot.service';
+import { CrashService } from './crash/crash.service';
+import { DiceService } from './dice/dice.service';
+
 import { GameInitNormalizedDto, GamePlayDto } from './dto/game.dto';
 
 function stableNum(n: number): number {
@@ -12,7 +16,7 @@ function stableNum(n: number): number {
   return n;
 }
 
-// ✅ IDs EXACTS renvoyés par /v1/provider/games
+// ✅ IDs EXACTS renvoyés par /v1/public/games (catalog) ou /v1/provider/games
 const SLOT_GAMES = new Set([
   'fruit_classic',
   'egypt_riches',
@@ -33,41 +37,29 @@ export class GamesService {
     private redis: RedisService,
     private wallet: WalletService,
     private fairness: FairnessService,
+
+    // SLOT (ton slot actuel)
     private slotFruit: SlotFruitStarService,
+
+    // ✅ nouveaux moteurs
+    private crash: CrashService,
+    private dice: DiceService,
   ) {}
 
-  /**
-   * 🔥 IMPORTANT
-   * Pour l’instant tu as seulement 1 moteur "slotFruit".
-   * Donc on mappe tous les SLOT vers ce moteur (temporaire).
-   * CRASH/DICE -> pas encore implémentés.
-   */
-  private getGame(gameCode: string) {
+  private kindOf(gameCode: string): 'SLOT' | 'CRASH' | 'DICE' {
     const code = (gameCode || '').trim();
-
-    if (SLOT_GAMES.has(code)) {
-      // On réutilise le même engine slotFruit pour tous les slots
-      return this.slotFruit;
-    }
-
-    if (CRASH_GAMES.has(code)) {
-      throw new BadRequestException('Game engine not implemented yet for CRASH');
-    }
-
-    if (DICE_GAMES.has(code)) {
-      throw new BadRequestException('Game engine not implemented yet for DICE');
-    }
-
+    if (SLOT_GAMES.has(code)) return 'SLOT';
+    if (CRASH_GAMES.has(code)) return 'CRASH';
+    if (DICE_GAMES.has(code)) return 'DICE';
     throw new BadRequestException('Unknown gameCode');
   }
 
   async init(operatorId: string, dto: GameInitNormalizedDto) {
-    // ✅ dto.gameCode est obligatoire, mais TS peut être strict -> on force string
     const gameCode = (dto.gameCode || '').trim();
     const playerExternalId = (dto.playerExternalId || '').trim();
     const currency = (dto.currency || '').trim();
 
-    const game = this.getGame(gameCode);
+    const kind = this.kindOf(gameCode);
 
     const { serverSeed, serverSeedHash } = this.fairness.generateServerSeed();
     const clientSeed = dto.clientSeed || `player:${playerExternalId}`;
@@ -82,10 +74,10 @@ export class GamesService {
       data: {
         operatorId,
         playerId: player.id,
-        gameCode: gameCode,
+        gameCode,
         betAmount: '0',
         winAmount: '0',
-        currency: currency,
+        currency,
         serverSeed,
         serverSeedHash,
         clientSeed,
@@ -97,12 +89,21 @@ export class GamesService {
 
     const bal = await this.wallet.getBalance(operatorId, playerExternalId, currency);
 
+    // rtp/volatility selon le type
+    const meta =
+      kind === 'SLOT'
+        ? { rtp: this.slotFruit.rtp, volatility: this.slotFruit.volatility }
+        : kind === 'CRASH'
+          ? { rtp: this.crash.rtp, volatility: this.crash.volatility }
+          : { rtp: this.dice.rtp, volatility: this.dice.volatility };
+
     return {
       provider: 'ZENYX GAMES',
       roundId: round.id,
-      gameCode: gameCode,
-      rtp: game.rtp,
-      volatility: game.volatility,
+      gameCode,
+      kind,
+      rtp: meta.rtp,
+      volatility: meta.volatility,
       fairness: { serverSeedHash },
       wallet: bal,
     };
@@ -114,14 +115,14 @@ export class GamesService {
     if (round.status !== 'CREATED') throw new BadRequestException('Round already played');
 
     const bet = stableNum(dto.bet);
-    const game = this.getGame(round.gameCode);
+    const kind = this.kindOf(round.gameCode);
 
     const lockKey = `lock:spin:${operatorId}:${round.playerId}`;
     const locked = await this.redis.acquireLock(lockKey, 5_000);
     if (!locked) throw new BadRequestException('Spin in progress');
 
     try {
-      // Idempotency per operator on play endpoint
+      // Idempotency
       if (dto.idempotencyKey) {
         const requestHash = sha256Hex(JSON.stringify(dto));
         const existing = await this.prisma.idempotencyKey.findUnique({
@@ -142,18 +143,47 @@ export class GamesService {
       await this.wallet.debit(operatorId, player.externalId, round.currency, bet, {
         idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:debit` : undefined,
         referenceId: `round:${round.id}`,
-        meta: { gameCode: round.gameCode },
+        meta: { gameCode: round.gameCode, kind },
       });
 
       const nextNonce = round.nonce + 1;
       const clientSeed = dto.clientSeed || round.clientSeed;
 
-      const playRes = game.play({
-        serverSeed: round.serverSeed,
-        clientSeed,
-        nonce: nextNonce,
-        bet,
-      });
+      // ---------- PLAY ----------
+      let playRes: { winAmount: number; roundResult: any };
+
+      if (kind === 'SLOT') {
+        playRes = this.slotFruit.play({
+          serverSeed: round.serverSeed,
+          clientSeed,
+          nonce: nextNonce,
+          bet,
+        });
+      } else if (kind === 'CRASH') {
+        const cashoutAt = Number(dto.crashCashoutAt);
+        playRes = this.crash.play({
+          serverSeed: round.serverSeed,
+          clientSeed,
+          nonce: nextNonce,
+          bet,
+          cashoutAt,
+        });
+      } else {
+        // DICE
+        const mode = dto.diceMode as any;
+        const target = Number(dto.diceTarget);
+
+        // dice.play est async dans ton service wrapper
+        playRes = await this.dice.play({
+          serverSeed: round.serverSeed,
+          clientSeed,
+          nonce: nextNonce,
+          bet,
+          mode,
+          target,
+          roundId: round.id,
+        } as any);
+      }
 
       const win = stableNum(playRes.winAmount);
 
@@ -161,7 +191,7 @@ export class GamesService {
         await this.wallet.credit(operatorId, player.externalId, round.currency, win, {
           idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:credit` : undefined,
           referenceId: `round:${round.id}`,
-          meta: { gameCode: round.gameCode },
+          meta: { gameCode: round.gameCode, kind },
         });
       }
 
@@ -184,6 +214,7 @@ export class GamesService {
         provider: 'ZENYX GAMES',
         roundId: updatedRound.id,
         gameCode: updatedRound.gameCode,
+        kind,
         bet: updatedRound.betAmount.toString(),
         win: updatedRound.winAmount.toString(),
         currency: updatedRound.currency,
@@ -213,10 +244,12 @@ export class GamesService {
   async verify(operatorId: string, roundId: string) {
     const round = await this.prisma.gameRound.findFirst({ where: { id: roundId, operatorId } });
     if (!round) throw new NotFoundException('Round not found');
+
     return {
       provider: 'ZENYX GAMES',
       roundId: round.id,
       gameCode: round.gameCode,
+      kind: this.kindOf(round.gameCode),
       status: round.status,
       fairness: {
         serverSeedHash: round.serverSeedHash,

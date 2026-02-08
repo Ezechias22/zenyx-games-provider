@@ -1,4 +1,12 @@
-import { IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class GameInitDto {
   @IsOptional()
@@ -54,4 +62,26 @@ export class GamePlayDto {
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
+
+  // =========================
+  // CRASH (crash_multiplier)
+  // =========================
+  @IsOptional()
+  @IsNumber()
+  @Min(1.01)
+  crashCashoutAt?: number; // ex: 1.50, 2.00
+
+  // =========================
+  // DICE (dice_over_under)
+  // =========================
+  @IsOptional()
+  @IsString()
+  @IsIn(['UNDER', 'OVER'])
+  diceMode?: 'UNDER' | 'OVER';
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.0001)
+  @Max(99.9999)
+  diceTarget?: number; // ex: 49.5
 }
