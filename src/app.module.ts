@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
@@ -22,10 +24,23 @@ import { AdminModule } from './admin/admin.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
 
+    // ✅ SERVE STATIC ASSETS
+    // URL: https://domain/assets/<game>/<file>
+    // Fichiers: /app/public/assets/...
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'public', 'assets'),
+      serveRoot: '/assets',
+      serveStaticOptions: {
+        index: false,
+        fallthrough: false,
+        maxAge: '30d',
+      },
+    }),
+
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 300, // 300 req/min global
+        limit: 300,
       },
     ]),
 
@@ -34,16 +49,11 @@ import { AdminModule } from './admin/admin.module';
     LogsModule,
     HealthModule,
 
-    // business
     OperatorModule,
     WalletModule,
     GamesModule,
     ProviderModule,
-
-    // ✅ public game-launch/session endpoints (token-based)
     PublicModule,
-
-    // 🔐 admin endpoints (master-token only)
     AdminModule,
   ],
 })
