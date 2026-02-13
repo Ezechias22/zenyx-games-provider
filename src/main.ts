@@ -7,8 +7,11 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     cors: true,
   });
 
@@ -24,6 +27,13 @@ async function bootstrap() {
       limit: '1mb',
     }),
   );
+
+  // ✅ SERVE STATIC ASSETS
+  // Attend un dossier: src/public/assets/* (copié dans dist/public/assets après build)
+  // URL finale: https://domain/assets/...
+  app.useStaticAssets(join(__dirname, '..', 'public'), {
+    prefix: '/',
+  });
 
   const apiPrefix = (process.env.API_BASE_PATH || 'v1').replace(/^\/+/, '');
   app.setGlobalPrefix(apiPrefix);
@@ -43,22 +53,11 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('ZENYX GAMES Provider API')
-    .setDescription(
-      'Production-ready casino game provider API (operators only).',
-    )
+    .setDescription('Production-ready casino game provider API (operators only).')
     .setVersion('1.0.0')
-    .addApiKey(
-      { type: 'apiKey', name: 'X-API-KEY', in: 'header' },
-      'x-api-key',
-    )
-    .addApiKey(
-      { type: 'apiKey', name: 'X-SIGNATURE', in: 'header' },
-      'x-signature',
-    )
-    .addApiKey(
-      { type: 'apiKey', name: 'X-TIMESTAMP', in: 'header' },
-      'x-timestamp',
-    )
+    .addApiKey({ type: 'apiKey', name: 'X-API-KEY', in: 'header' }, 'x-api-key')
+    .addApiKey({ type: 'apiKey', name: 'X-SIGNATURE', in: 'header' }, 'x-signature')
+    .addApiKey({ type: 'apiKey', name: 'X-TIMESTAMP', in: 'header' }, 'x-timestamp')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -78,6 +77,7 @@ async function bootstrap() {
 
   console.log(`ZENYX Provider API running on ${baseUrl}/${apiPrefix}`);
   console.log(`Swagger on ${baseUrl}/${swaggerPath}`);
+  console.log(`Static assets on ${baseUrl}/assets/*`);
 }
 
 bootstrap();
