@@ -14,10 +14,7 @@ import { GamesModule } from './games/games.module';
 import { LogsModule } from './logs/logs.module';
 import { ProviderModule } from './provider/provider.module';
 
-// ✅ PUBLIC (session + launchUrl)
 import { PublicModule } from './public/public.module';
-
-// ✅ ADMIN (master-token only)
 import { AdminModule } from './admin/admin.module';
 
 @Module({
@@ -26,7 +23,7 @@ import { AdminModule } from './admin/admin.module';
 
     // ✅ SERVE STATIC ASSETS
     // URL: https://domain/assets/<game>/<file>
-    // Fichiers: /app/public/assets/...
+    // Files: /app/public/assets/...
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'public', 'assets'),
       serveRoot: '/assets',
@@ -34,6 +31,11 @@ import { AdminModule } from './admin/admin.module';
         index: false,
         fallthrough: false,
         maxAge: '30d',
+        setHeaders: (res) => {
+          // utile pour charger images depuis un autre domaine (game-server)
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        },
       },
     }),
 

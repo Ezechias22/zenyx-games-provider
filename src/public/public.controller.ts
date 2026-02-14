@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { randomBytes } from 'crypto';
+import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
 
 import { RedisService } from '../common/redis/redis.service';
 import { GamesService } from '../games/games.service';
@@ -21,6 +23,25 @@ import { getCatalogList } from '../games/catalog';
 
 function randomId(): string {
   return randomBytes(16).toString('hex');
+}
+
+function listSymbolsMap(symbolsDirUrl?: string): Record<string, string> | undefined {
+  if (!symbolsDirUrl) return undefined;
+
+  // symbolsDirUrl = "/assets/<game>/symbols"
+  const rel = symbolsDirUrl.replace(/^\/+/, ''); // "assets/<game>/symbols"
+  const abs = join(process.cwd(), 'public', rel); // "/app/public/assets/<game>/symbols"
+
+  if (!existsSync(abs)) return undefined;
+
+  const files = readdirSync(abs).filter((f) => f.toLowerCase().endsWith('.png'));
+
+  const map: Record<string, string> = {};
+  for (const f of files) {
+    const key = f.replace(/\.png$/i, '');
+    map[key] = `${symbolsDirUrl}/${f}`;
+  }
+  return map;
 }
 
 @ApiTags('public')
@@ -35,11 +56,9 @@ export class PublicController {
   ) {}
 
   /**
-   * ======================================================
    * GET /v1/public/games
-   * ======================================================
    * Catalogue public utilisé par le GAME SERVER (iframe).
-   * → Images, métadonnées UI, RTP, type.
+   * → Images, métadonnées UI, RTP, type + symbols map
    */
   @Get('games')
   async gamesList() {
@@ -53,33 +72,18 @@ export class PublicController {
       assets: {
         cover: g.assets.cover,
         background: g.assets.background,
+        symbols: g.kind === 'SLOT' ? listSymbolsMap(g.assets.symbolsDir) : undefined,
       },
     }));
   }
 
   /**
-   * ======================================================
    * POST /v1/public/session
-   * ======================================================
-   * Crée une session "publique" et retourne un launchUrl.
-   *
-   * Flow réel casino :
-   * - Le casino appelle /public/session
-   * - Le provider crée le round (init)
-   * - Le provider stocke roundId en Redis
-   * - Le provider retourne une URL iframe (/play?sessionId=...)
+   * Crée une session "publique" et retourne un launchUrl iframe-ready (PROVIDER).
    */
   @Post('session')
   async createSession(@Body() dto: PublicSessionDto, @Req() req: any) {
     const operatorId = req.operator.id;
-
-    const gameServerBase = String(
-      process.env.GAME_SERVER_BASE_URL || '',
-    ).replace(/\/+$/, '');
-
-    if (!gameServerBase) {
-      throw new BadRequestException('GAME_SERVER_BASE_URL is not configured');
-    }
 
     // 1) init round côté provider
     const initRes = await this.games.init(operatorId, {
@@ -104,10 +108,16 @@ export class PublicController {
 
     await this.redis.setJson(`public:session:${sessionId}`, payload, ttl);
 
-    // 3) URL iframe (ouverte par le casino)
-    const launchUrl = `${gameServerBase}/play?sessionId=${encodeURIComponent(
-      sessionId,
-    )}`;
+    // 3) launchUrl DOIT pointer vers le provider (iframe)
+    const providerBase =
+      String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '') ||
+      (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
+
+    if (!providerBase) {
+      throw new BadRequestException('PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN is not configured');
+    }
+
+    const launchUrl = `${providerBase}/launch?s=${encodeURIComponent(sessionId)}`;
 
     return {
       sessionId,
@@ -117,19 +127,14 @@ export class PublicController {
   }
 
   /**
-   * ======================================================
    * POST /v1/public/play
-   * ======================================================
    * Appelé UNIQUEMENT par le GAME SERVER.
-   * Le casino ne voit jamais roundId.
    */
   @Post('play')
   async play(@Body() dto: PublicPlayDto, @Req() req: any) {
     const operatorId = req.operator.id;
 
-    const session = await this.redis.getJson<any>(
-      `public:session:${dto.sessionId}`,
-    );
+    const session = await this.redis.getJson<any>(`public:session:${dto.sessionId}`);
 
     if (!session || session.operatorId !== operatorId) {
       throw new UnauthorizedException('Invalid or expired session');

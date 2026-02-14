@@ -3,24 +3,22 @@
 export type GameKind = 'SLOT' | 'CRASH' | 'DICE';
 
 export type GameCatalogItem = {
-  id: string;                 // gameCode
-  name: string;               // nom marketing
+  id: string; // gameCode
+  name: string; // nom marketing
   kind: GameKind;
   rtp: number;
   volatility?: 'LOW' | 'MEDIUM' | 'HIGH';
 
-  // UI metadata (utilisé par game-server)
   ui: {
     aspectRatio: '16:9' | '4:3' | '9:16';
     width: number;
     height: number;
   };
 
-  // IMPORTANT: chaque jeu a ses assets indépendants
   assets: {
-    cover: string;            // image de sélection (tile)
-    background?: string;      // background
-    symbolsDir?: string;      // dossier des symboles (si SLOT)
+    cover: string; // image de sélection (tile)
+    background?: string; // background
+    symbolsDir?: string; // dossier des symboles (si SLOT)
   };
 };
 
@@ -33,7 +31,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/fruit_classic/cover.jpg',
+      cover: '/assets/fruit_classic/cover.png',
       background: '/assets/fruit_classic/background.jpg',
       symbolsDir: '/assets/fruit_classic/symbols',
     },
@@ -47,7 +45,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/egypt_riches/cover.jpg',
+      cover: '/assets/egypt_riches/cover.png',
       background: '/assets/egypt_riches/background.jpg',
       symbolsDir: '/assets/egypt_riches/symbols',
     },
@@ -61,7 +59,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/jungle_wild/cover.jpg',
+      cover: '/assets/jungle_wild/cover.png',
       background: '/assets/jungle_wild/background.jpg',
       symbolsDir: '/assets/jungle_wild/symbols',
     },
@@ -75,7 +73,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/luxury_gold/cover.jpg',
+      cover: '/assets/luxury_gold/cover.png',
       background: '/assets/luxury_gold/background.jpg',
       symbolsDir: '/assets/luxury_gold/symbols',
     },
@@ -89,7 +87,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/diamond_rush/cover.jpg',
+      cover: '/assets/diamond_rush/cover.png',
       background: '/assets/diamond_rush/background.jpg',
       symbolsDir: '/assets/diamond_rush/symbols',
     },
@@ -103,7 +101,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/fire_reels/cover.jpg',
+      cover: '/assets/fire_reels/cover.png',
       background: '/assets/fire_reels/background.jpg',
       symbolsDir: '/assets/fire_reels/symbols',
     },
@@ -117,7 +115,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     volatility: 'MEDIUM',
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/mystic_fortune/cover.jpg',
+      cover: '/assets/mystic_fortune/cover.png',
       background: '/assets/mystic_fortune/background.jpg',
       symbolsDir: '/assets/mystic_fortune/symbols',
     },
@@ -130,7 +128,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     rtp: 0.97,
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/crash_multiplier/cover.jpg',
+      cover: '/assets/crash_multiplier/cover.png',
       background: '/assets/crash_multiplier/background.jpg',
     },
   },
@@ -142,7 +140,7 @@ export const GAMES_CATALOG: Record<string, GameCatalogItem> = {
     rtp: 0.99,
     ui: { aspectRatio: '16:9', width: 1280, height: 720 },
     assets: {
-      cover: '/assets/dice_over_under/cover.jpg',
+      cover: '/assets/dice_over_under/cover.png',
       background: '/assets/dice_over_under/background.jpg',
     },
   },

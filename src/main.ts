@@ -8,7 +8,6 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -18,22 +17,22 @@ async function bootstrap() {
   // ✅ Railway / reverse proxy (x-forwarded-for, ip, https)
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
-  app.use(helmet());
+  // ✅ Helmet configuré pour iframe + assets cross-origin
+  app.use(
+    helmet({
+      frameguard: false, // IMPORTANT : sinon X-Frame-Options bloque l'iframe
+      contentSecurityPolicy: false, // on met CSP sur /launch (pas global)
+      crossOriginResourcePolicy: { policy: 'cross-origin' }, // IMPORTANT pour images cross-domain
+    }),
+  );
+
   app.use(compression());
 
-  // ✅ JSON parser (compatible avec ta signature actuelle)
   app.use(
     json({
       limit: '1mb',
     }),
   );
-
-  // ✅ SERVE STATIC ASSETS
-  // Attend un dossier: src/public/assets/* (copié dans dist/public/assets après build)
-  // URL finale: https://domain/assets/...
-  app.useStaticAssets(join(__dirname, '..', 'public'), {
-    prefix: '/',
-  });
 
   const apiPrefix = (process.env.API_BASE_PATH || 'v1').replace(/^\/+/, '');
   app.setGlobalPrefix(apiPrefix);
@@ -46,9 +45,7 @@ async function bootstrap() {
     }),
   );
 
-  // --------------------
   // Swagger
-  // --------------------
   const swaggerPath = 'docs';
 
   const swaggerConfig = new DocumentBuilder()
@@ -65,7 +62,6 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
 
-  // ✅ Railway : écouter sur PORT fourni
   const port = Number(process.env.PORT || config.get<number>('PORT') || 8080);
   const host = '0.0.0.0';
 
