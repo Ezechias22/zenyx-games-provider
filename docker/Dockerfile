@@ -22,6 +22,7 @@ COPY tsconfig.json nest-cli.json ./
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY src ./src
+COPY public ./public
 RUN npm run build
 
 # 3) runner (image finale)
@@ -32,9 +33,9 @@ ENV PORT=8080
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/public ./public
 COPY package.json ./
 
 EXPOSE 8080
 
-# ✅ generate (déjà fait), migrate deploy, puis run
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
