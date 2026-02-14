@@ -6,6 +6,14 @@ import { RedisService } from '../common/redis/redis.service';
 export class LaunchController {
   constructor(private readonly redis: RedisService) {}
 
+  /**
+   * GET /launch?s=<sessionId>
+   * Page iframe-ready servie par le PROVIDER.
+   * Elle embed le game-server /play?sessionId=...
+   *
+   * Headers:
+   * - CSP frame-ancestors (autorise iframe depuis ton lobby / game-server)
+   */
   @Get('launch')
   async launch(@Query('s') sessionId: string, @Res() res: Response) {
     if (!sessionId) {
@@ -24,10 +32,16 @@ export class LaunchController {
 
     const iframeUrl = `${gameServerBase}/play?sessionId=${encodeURIComponent(sessionId)}`;
 
-    // Autoriser l'iframe depuis ton game-server (ou * pour test)
+    // ✅ Autoriser l'iframe depuis ton game-server (ou * pour test)
+    // Exemple: https://zenyx-game-server-production-666e.up.railway.app
     const allow = String(process.env.IFRAME_ALLOW_ORIGINS || '*').trim();
 
+    // ✅ important: enlever X-Frame-Options si un proxy/middleware en injecte
+    res.removeHeader('X-Frame-Options');
+
+    // ✅ CSP frame-ancestors (le vrai contrôle iframe)
     res.setHeader('Content-Security-Policy', `frame-ancestors ${allow};`);
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
 
     return res.send(`<!doctype html>

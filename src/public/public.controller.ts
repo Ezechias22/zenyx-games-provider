@@ -10,38 +10,30 @@ import {
 } from '@nestjs/common';
 import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { randomBytes } from 'crypto';
-import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
+import * as fs from 'fs/promises';
 
 import { RedisService } from '../common/redis/redis.service';
 import { GamesService } from '../games/games.service';
 import { PublicGuard } from './public.guard';
 import { PublicPlayDto, PublicSessionDto } from './dto/public.dto';
 
-// ✅ catalogue central (source unique de vérité)
 import { getCatalogList } from '../games/catalog';
 
 function randomId(): string {
   return randomBytes(16).toString('hex');
 }
 
-function listSymbolsMap(symbolsDirUrl?: string): Record<string, string> | undefined {
-  if (!symbolsDirUrl) return undefined;
-
-  // symbolsDirUrl = "/assets/<game>/symbols"
-  const rel = symbolsDirUrl.replace(/^\/+/, ''); // "assets/<game>/symbols"
-  const abs = join(process.cwd(), 'public', rel); // "/app/public/assets/<game>/symbols"
-
-  if (!existsSync(abs)) return undefined;
-
-  const files = readdirSync(abs).filter((f) => f.toLowerCase().endsWith('.png'));
-
-  const map: Record<string, string> = {};
-  for (const f of files) {
-    const key = f.replace(/\.png$/i, '');
-    map[key] = `${symbolsDirUrl}/${f}`;
+async function listSymbolPaths(gameId: string): Promise<string[]> {
+  try {
+    const dir = join(process.cwd(), 'public', 'assets', gameId, 'symbols');
+    const files = await fs.readdir(dir);
+    return files
+      .filter((f) => /\.(png|jpg|jpeg|webp)$/i.test(f))
+      .map((f) => `/assets/${gameId}/symbols/${f}`);
+  } catch {
+    return [];
   }
-  return map;
 }
 
 @ApiTags('public')
@@ -55,32 +47,37 @@ export class PublicController {
     private readonly games: GamesService,
   ) {}
 
-  /**
-   * GET /v1/public/games
-   * Catalogue public utilisé par le GAME SERVER (iframe).
-   * → Images, métadonnées UI, RTP, type + symbols map
-   */
   @Get('games')
   async gamesList() {
-    return getCatalogList().map((g) => ({
-      id: g.id,
-      name: g.name,
-      kind: g.kind,
-      rtp: g.rtp,
-      volatility: g.volatility,
-      ui: g.ui,
-      assets: {
-        cover: g.assets.cover,
-        background: g.assets.background,
-        symbols: g.kind === 'SLOT' ? listSymbolsMap(g.assets.symbolsDir) : undefined,
-      },
-    }));
+    const list = getCatalogList();
+
+    const out = await Promise.all(
+      list.map(async (g) => {
+        const assets: any = {
+          cover: g.assets.cover,
+          background: g.assets.background,
+        };
+
+        // ✅ SLOT: renvoyer les symbols dans le catalog
+        if (g.kind === 'SLOT') {
+          assets.symbols = await listSymbolPaths(g.id);
+        }
+
+        return {
+          id: g.id,
+          name: g.name,
+          kind: g.kind,
+          rtp: g.rtp,
+          volatility: g.volatility,
+          ui: g.ui,
+          assets,
+        };
+      }),
+    );
+
+    return out;
   }
 
-  /**
-   * POST /v1/public/session
-   * Crée une session "publique" et retourne un launchUrl iframe-ready (PROVIDER).
-   */
   @Post('session')
   async createSession(@Body() dto: PublicSessionDto, @Req() req: any) {
     const operatorId = req.operator.id;
@@ -108,16 +105,19 @@ export class PublicController {
 
     await this.redis.setJson(`public:session:${sessionId}`, payload, ttl);
 
-    // 3) launchUrl DOIT pointer vers le provider (iframe)
-    const providerBase =
-      String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '') ||
-      (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
+    // ✅ 3) launchUrl DOIT POINTER VERS LE PROVIDER
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 
-    if (!providerBase) {
-      throw new BadRequestException('PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN is not configured');
+    const resolvedBase = baseUrl || '';
+    if (!resolvedBase) {
+      throw new BadRequestException(
+        'Missing PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN for launchUrl',
+      );
     }
 
-    const launchUrl = `${providerBase}/launch?s=${encodeURIComponent(sessionId)}`;
+    const launchUrl = `${resolvedBase}/launch?s=${encodeURIComponent(sessionId)}`;
 
     return {
       sessionId,
@@ -126,15 +126,13 @@ export class PublicController {
     };
   }
 
-  /**
-   * POST /v1/public/play
-   * Appelé UNIQUEMENT par le GAME SERVER.
-   */
   @Post('play')
   async play(@Body() dto: PublicPlayDto, @Req() req: any) {
     const operatorId = req.operator.id;
 
-    const session = await this.redis.getJson<any>(`public:session:${dto.sessionId}`);
+    const session = await this.redis.getJson<any>(
+      `public:session:${dto.sessionId}`,
+    );
 
     if (!session || session.operatorId !== operatorId) {
       throw new UnauthorizedException('Invalid or expired session');

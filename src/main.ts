@@ -17,17 +17,26 @@ async function bootstrap() {
   // ✅ Railway / reverse proxy (x-forwarded-for, ip, https)
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
-  // ✅ Helmet configuré pour iframe + assets cross-origin
+  // ✅ Helmet compatible iframe + assets cross-origin
   app.use(
     helmet({
-      frameguard: false, // IMPORTANT : sinon X-Frame-Options bloque l'iframe
-      contentSecurityPolicy: false, // on met CSP sur /launch (pas global)
-      crossOriginResourcePolicy: { policy: 'cross-origin' }, // IMPORTANT pour images cross-domain
+      // ✅ on contrôle l'iframe via CSP frame-ancestors sur /launch
+      frameguard: false,
+
+      // ✅ on ne met pas de CSP global (sinon ça casse /launch)
+      contentSecurityPolicy: false,
+
+      // ✅ permet au game-server de charger images/assets depuis le provider
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+
+      // ✅ évite des blocages COEP en prod
+      crossOriginEmbedderPolicy: false,
     }),
   );
 
   app.use(compression());
 
+  // ✅ JSON parser
   app.use(
     json({
       limit: '1mb',
@@ -45,7 +54,9 @@ async function bootstrap() {
     }),
   );
 
+  // --------------------
   // Swagger
+  // --------------------
   const swaggerPath = 'docs';
 
   const swaggerConfig = new DocumentBuilder()
@@ -62,6 +73,7 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
 
+  // ✅ Railway : écouter sur PORT fourni
   const port = Number(process.env.PORT || config.get<number>('PORT') || 8080);
   const host = '0.0.0.0';
 
