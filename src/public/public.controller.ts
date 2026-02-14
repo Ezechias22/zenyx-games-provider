@@ -36,6 +36,10 @@ async function listSymbolPaths(gameId: string): Promise<string[]> {
   }
 }
 
+function cleanBaseUrl(u: string) {
+  return String(u || '').trim().replace(/\/+$/, '');
+}
+
 @ApiTags('public')
 @ApiSecurity('x-public-token')
 @ApiSecurity('x-operator-key')
@@ -47,6 +51,10 @@ export class PublicController {
     private readonly games: GamesService,
   ) {}
 
+  /**
+   * GET /v1/public/games
+   * Catalogue public utilisé par le GAME SERVER (iframe).
+   */
   @Get('games')
   async gamesList() {
     const list = getCatalogList();
@@ -58,7 +66,6 @@ export class PublicController {
           background: g.assets.background,
         };
 
-        // ✅ SLOT: renvoyer les symbols dans le catalog
         if (g.kind === 'SLOT') {
           assets.symbols = await listSymbolPaths(g.id);
         }
@@ -78,6 +85,10 @@ export class PublicController {
     return out;
   }
 
+  /**
+   * POST /v1/public/session
+   * Crée session publique + renvoie launchUrl (DOIT POINTER VERS LE PROVIDER)
+   */
   @Post('session')
   async createSession(@Body() dto: PublicSessionDto, @Req() req: any) {
     const operatorId = req.operator.id;
@@ -90,7 +101,7 @@ export class PublicController {
       clientSeed: dto.clientSeed,
     });
 
-    // 2) créer session publique
+    // 2) session publique
     const sessionId = `sess_${randomId()}`;
     const ttl = Number(process.env.PUBLIC_SESSION_TTL_SEC || '3600');
 
@@ -105,19 +116,25 @@ export class PublicController {
 
     await this.redis.setJson(`public:session:${sessionId}`, payload, ttl);
 
-    // ✅ 3) launchUrl DOIT POINTER VERS LE PROVIDER
+    // ✅ 3) launchUrl -> PROVIDER + /v1/launch (globalPrefix)
+    const apiPrefix = (process.env.API_BASE_PATH || 'v1').replace(/^\/+/, '');
+
     const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+      : cleanBaseUrl(process.env.PUBLIC_BASE_URL || '');
 
-    const resolvedBase = baseUrl || '';
+    const resolvedBase = cleanBaseUrl(baseUrl);
+
     if (!resolvedBase) {
       throw new BadRequestException(
-        'Missing PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN for launchUrl',
+        'Missing RAILWAY_PUBLIC_DOMAIN or PUBLIC_BASE_URL for launchUrl',
       );
     }
 
-    const launchUrl = `${resolvedBase}/launch?s=${encodeURIComponent(sessionId)}`;
+    // IMPORTANT: /v1/launch (pas /launch)
+    const launchUrl = `${resolvedBase}/${apiPrefix}/launch?s=${encodeURIComponent(
+      sessionId,
+    )}`;
 
     return {
       sessionId,
@@ -126,6 +143,10 @@ export class PublicController {
     };
   }
 
+  /**
+   * POST /v1/public/play
+   * Appelé UNIQUEMENT par le game-server.
+   */
   @Post('play')
   async play(@Body() dto: PublicPlayDto, @Req() req: any) {
     const operatorId = req.operator.id;
