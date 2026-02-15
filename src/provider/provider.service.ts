@@ -1,6 +1,7 @@
+// src/provider/provider.service.ts
 import { Injectable } from '@nestjs/common';
 import { EngineRegistry } from '../games/core/registry';
-import { sha256Hex, newServerSeed } from '../games/core/fairness';
+import { newServerSeed } from '../games/core/fairness';
 
 import { FRUIT_CLASSIC_ENGINE } from '../games/slots/fruit_classic/slot.engine';
 import { EGYPT_RICHES_ENGINE } from '../games/slots/egypt_riches/slot.engine';
@@ -30,8 +31,13 @@ export class ProviderService {
     this.registry.register(DICE_ENGINE);
   }
 
+  // ✅ NEW: accès propre à un engine (utilisé par GamesService)
+  getEngine(gameId: string) {
+    return this.registry.get(gameId);
+  }
+
   listEngines(kind?: string) {
-    return this.registry.list().filter(e => !kind || e.kind === kind);
+    return this.registry.list().filter((e) => !kind || e.kind === kind);
   }
 
   async getGameConfig(gameId: string) {
@@ -39,7 +45,13 @@ export class ProviderService {
     return { id: e.id, kind: e.kind, rtp: e.rtp };
   }
 
-  async verifyFairness(params: { serverSeed: string; clientSeed: string; nonce: number; gameId: string; action: any }) {
+  async verifyFairness(params: {
+    serverSeed: string;
+    clientSeed: string;
+    nonce: number;
+    gameId: string;
+    action: any;
+  }) {
     const e = this.registry.get(params.gameId);
     const ctx = {
       operatorId: 'verify',
@@ -81,11 +93,14 @@ export class ProviderService {
         sessionData,
       };
 
-      const { result, nextSessionData } = await e.handle(ctx, { type: 'SPIN', payload: { roundId: `sim-${i}` } });
+      const { result, nextSessionData } = await e.handle(ctx, {
+        type: 'SPIN',
+        payload: { roundId: `sim-${i}` },
+      });
       sessionData = nextSessionData;
 
       totalBet += 1;
-      totalWin += Number(result.win);
+      totalWin += Number((result as any).win);
 
       nonce++;
       if (nonce % 50000 === 0) serverSeed = newServerSeed();

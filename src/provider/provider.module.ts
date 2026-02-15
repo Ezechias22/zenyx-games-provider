@@ -1,3 +1,4 @@
+// src/provider/provider.module.ts
 import { Module } from '@nestjs/common';
 import { ProviderController } from './provider.controller';
 import { ProviderService } from './provider.service';
@@ -11,6 +12,6 @@ import { OperatorModule } from '../operator/operator.module';
   imports: [PrismaModule, LogsModule, EngineModule, WalletModule, OperatorModule],
   controllers: [ProviderController],
   providers: [ProviderService],
-  exports: [ProviderService],
+  exports: [ProviderService], // ✅ IMPORTANT pour GamesModule
 })
 export class ProviderModule {}
