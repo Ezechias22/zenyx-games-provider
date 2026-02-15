@@ -40,47 +40,57 @@ function cleanBaseUrl(u: string) {
   return String(u || '').trim().replace(/\/+$/, '');
 }
 
-// ✅ Convertit symbols -> grid si nécessaire (compat game-server)
-function ensureSlotGrid(result: any) {
-  if (!result || result.type !== 'SLOT') return;
+/**
+ * Le provider renvoie parfois une grid "colonnes" (5 colonnes x 3 lignes),
+ * mais le game-server affiche plus simplement une grid "lignes" (3 lignes x 5 colonnes).
+ */
+function normalizeGridToRows(grid: any): string[][] | null {
+  if (!Array.isArray(grid) || grid.length === 0) return null;
 
-  // déjà OK
-  if (result.grid) return;
-
-  const symbols = result.symbols;
-
-  // Cas 1: déjà une matrice 2D
-  if (Array.isArray(symbols) && Array.isArray(symbols[0])) {
-    result.grid = symbols;
-    return;
+  // Si c'est déjà 3 lignes (rows) => 3 arrays de longueur 5
+  if (grid.length === 3 && Array.isArray(grid[0]) && grid[0].length === 5) {
+    return grid as string[][];
   }
 
-  // Cas 2: tableau "flat" => essayer 5x3
-  if (Array.isArray(symbols) && symbols.length) {
-    const COLS = 5;
-    const ROWS = 3;
-
-    // Interprétation A: [col0r0, col0r1, col0r2, col1r0...]
-    const gridCols: any[] = [];
-    for (let c = 0; c < COLS; c++) {
-      const col = symbols.slice(c * ROWS, (c + 1) * ROWS);
-      if (col.length) gridCols.push(col);
+  // Si c'est 5 colonnes (cols) => 5 arrays de longueur 3, on transpose en 3x5
+  if (grid.length === 5 && Array.isArray(grid[0]) && grid[0].length === 3) {
+    const rows = 3;
+    const cols = 5;
+    const out: string[][] = Array.from({ length: rows }, () => Array(cols).fill(''));
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        out[r][c] = String(grid[c][r] ?? '');
+      }
     }
-
-    if (gridCols.length === COLS && gridCols.every((c) => c.length === ROWS)) {
-      result.grid = gridCols;
-      return;
-    }
-
-    // Interprétation B: [row0c0, row0c1...]
-    const gridRows: any[] = [];
-    for (let r = 0; r < ROWS; r++) {
-      const row = symbols.slice(r * COLS, (r + 1) * COLS);
-      if (row.length) gridRows.push(row);
-    }
-
-    result.grid = gridRows;
+    return out;
   }
+
+  // Format inconnu -> on laisse tel quel si c'est 2D
+  if (Array.isArray(grid[0])) return grid as string[][];
+  return null;
+}
+
+/**
+ * Mapping minimal pour éviter "Invalid symbol cell".
+ * - Si la cell est déjà un filename (ex: "wild", "scatter", "cherry") => ok
+ * - Si c'est "W"/"S" => map vers wild/scatter
+ * - Si c'est vide => "unknown"
+ *
+ * NOTE: Si ton game-server attend des URL directes, tu peux switcher pour renvoyer des URL ici.
+ * Pour l’instant, on renvoie des "keys" propres et stables.
+ */
+function normalizeSymbolKey(cell: any): string {
+  const v = String(cell ?? '').trim();
+  if (!v) return 'unknown';
+
+  if (v === 'W') return 'wild';
+  if (v === 'S') return 'scatter';
+
+  // sécurité: éviter caractères cassés
+  // (on garde lettres/chiffres/_/-, sinon on met unknown)
+  if (!/^[a-zA-Z0-9_\-]+$/.test(v)) return v; // on ne casse pas si tu utilises EG1/EG2 etc.
+
+  return v;
 }
 
 @ApiTags('public')
@@ -189,29 +199,74 @@ export class PublicController {
   /**
    * POST /v1/public/play
    * Appelé UNIQUEMENT par le game-server.
+   *
+   * FIX IMPORTANT:
+   * - Si "Round already played", on recrée automatiquement un nouveau round pour le MÊME sessionId.
+   * - On normalise result.grid en 3x5 (lignes) et on nettoie les symbol keys.
    */
   @Post('play')
   async play(@Body() dto: PublicPlayDto, @Req() req: any) {
     const operatorId = req.operator.id;
 
-    const session = await this.redis.getJson<any>(
-      `public:session:${dto.sessionId}`,
-    );
+    const key = `public:session:${dto.sessionId}`;
+    const session = await this.redis.getJson<any>(key);
 
     if (!session || session.operatorId !== operatorId) {
       throw new UnauthorizedException('Invalid or expired session');
     }
 
-    const data: any = await this.games.play(operatorId, {
-      roundId: session.roundId,
-      bet: dto.bet,
-      clientSeed: dto.clientSeed,
-      idempotencyKey: dto.idempotencyKey,
-    });
+    const tryPlay = async (roundId: string) => {
+      return this.games.play(operatorId, {
+        roundId,
+        bet: dto.bet,
+        clientSeed: dto.clientSeed,
+        idempotencyKey: dto.idempotencyKey,
+      });
+    };
 
-    // ✅ fix: compat pour game-server => ajouter result.grid si manquant
-    ensureSlotGrid(data?.result);
+    let res: any;
 
-    return data;
+    try {
+      res = await tryPlay(session.roundId);
+    } catch (e: any) {
+      const msg =
+        e?.response?.message ||
+        e?.message ||
+        '';
+
+      // ✅ Si le round est déjà joué, on init un NOUVEAU round et on rejoue
+      if (String(msg).includes('Round already played')) {
+        const initRes = await this.games.init(operatorId, {
+          gameCode: session.gameCode,
+          playerExternalId: session.playerExternalId,
+          currency: session.currency,
+          clientSeed: dto.clientSeed,
+        });
+
+        session.roundId = initRes.roundId;
+        await this.redis.setJson(key, session, Number(process.env.PUBLIC_SESSION_TTL_SEC || '3600'));
+
+        res = await tryPlay(session.roundId);
+      } else {
+        throw e;
+      }
+    }
+
+    // Normalisation SLOT grid + symbols
+    try {
+      if (res?.kind === 'SLOT' && res?.result) {
+        const grid = normalizeGridToRows(res.result.grid);
+        if (grid) {
+          res.result.grid = grid.map((row) => row.map(normalizeSymbolKey));
+        }
+        if (Array.isArray(res.result.symbols)) {
+          res.result.symbols = res.result.symbols.map(normalizeSymbolKey);
+        }
+      }
+    } catch {
+      // no-op : on ne casse pas la réponse
+    }
+
+    return res;
   }
 }
