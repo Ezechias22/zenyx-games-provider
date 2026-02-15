@@ -17,6 +17,8 @@ import { DiceService } from './dice/dice.service';
 import { GameInitNormalizedDto, GamePlayDto } from './dto/game.dto';
 
 import { EngineRegistry } from './core/registry';
+import { ZenyxRoundResult } from './core/events';
+import { mustGetCatalogItem } from './catalog';
 
 // ✅ Slot engines “config-based” (pas d’emoji)
 import { FRUIT_CLASSIC_ENGINE } from './slots/fruit_classic/slot.engine';
@@ -26,8 +28,6 @@ import { LUXURY_GOLD_ENGINE } from './slots/luxury_gold/slot.engine';
 import { DIAMOND_RUSH_ENGINE } from './slots/diamond_rush/slot.engine';
 import { FIRE_REELS_ENGINE } from './slots/fire_reels/slot.engine';
 import { MYSTIC_FORTUNE_ENGINE } from './slots/mystic_fortune/slot.engine';
-
-import { mustGetCatalogItem } from './catalog';
 
 function stableNum(n: number): number {
   if (!Number.isFinite(n) || n < 0) throw new BadRequestException('Invalid number');
@@ -48,9 +48,27 @@ const SLOT_GAMES = new Set([
 const CRASH_GAMES = new Set(['crash_multiplier']);
 const DICE_GAMES = new Set(['dice_over_under']);
 
+function extractGridFromRound(rr: ZenyxRoundResult): string[][] | null {
+  const ev = (rr.events || []).find((e: any) => e?.t === 'REELS_STOP');
+  const grid = ev?.d?.grid;
+  if (!Array.isArray(grid)) return null;
+  // grid attendu: string[][]
+  if (Array.isArray(grid[0])) return grid as string[][];
+  return null;
+}
+
+function flattenGrid(grid: string[][] | null): string[] {
+  if (!grid) return [];
+  const out: string[] = [];
+  for (const row of grid) {
+    if (Array.isArray(row)) out.push(...row.map(String));
+  }
+  return out;
+}
+
 @Injectable()
 export class GamesService {
-  // ✅ Registry local des engines SLOT (même logique que ProviderService)
+  // ✅ Registry local des engines SLOT
   private slotRegistry = new EngineRegistry();
 
   constructor(
@@ -59,11 +77,10 @@ export class GamesService {
     private wallet: WalletService,
     private fairness: FairnessService,
 
-    // ✅ moteurs non-slot déjà en services
     private crash: CrashService,
     private dice: DiceService,
   ) {
-    // ✅ register des slots (IMPORTANT)
+    // ✅ register slots
     this.slotRegistry.register(FRUIT_CLASSIC_ENGINE);
     this.slotRegistry.register(EGYPT_RICHES_ENGINE);
     this.slotRegistry.register(JUNGLE_WILD_ENGINE);
@@ -115,8 +132,6 @@ export class GamesService {
     });
 
     const bal = await this.wallet.getBalance(operatorId, playerExternalId, currency);
-
-    // ✅ meta propre par jeu (catalog)
     const item = mustGetCatalogItem(gameCode);
 
     return {
@@ -178,7 +193,7 @@ export class GamesService {
       let roundResult: any = {};
 
       if (kind === 'SLOT') {
-        // ✅ utiliser le vrai moteur du slot (pas fruit_star)
+        const item = mustGetCatalogItem(round.gameCode);
         const engine: any = this.slotRegistry.get(round.gameCode);
 
         const ctx: any = {
@@ -186,19 +201,34 @@ export class GamesService {
           playerId: player.externalId,
           currency: round.currency,
           gameId: round.gameCode,
-          bet: String(bet),
+          bet: String(bet), // decimal string
           clientSeed,
           serverSeed: round.serverSeed,
           nonce: nextNonce,
-          sessionData: {}, // (si tu ajoutes des features plus tard)
+          sessionData: {}, // (bonus later)
         };
 
         const action = { type: 'SPIN', payload: { roundId: round.id } };
 
         const handled = await engine.handle(ctx, action);
-        // provider engines renvoient { result, nextSessionData }
-        roundResult = handled?.result ?? handled;
-        winAmount = Number(roundResult?.win ?? 0);
+        const rr: ZenyxRoundResult = handled.result;
+
+        const grid = extractGridFromRound(rr);
+        const symbols = flattenGrid(grid);
+
+        // ✅ Convertir en format attendu par game-server
+        roundResult = {
+          type: 'SLOT',
+          grid,                 // ✅ IMPORTANT
+          symbols,              // ✅ IMPORTANT (liste de IDs)
+          multiplier: 0,
+          bet: Number(bet),
+          win: Number(rr.win),
+          rtp: item.rtp,
+          volatility: item.volatility,
+        };
+
+        winAmount = Number(rr.win);
       } else if (kind === 'CRASH') {
         const cashoutAt = Number(dto.crashCashoutAt);
         const playRes = this.crash.play({
@@ -211,7 +241,6 @@ export class GamesService {
         winAmount = Number(playRes.winAmount);
         roundResult = playRes.roundResult;
       } else {
-        // DICE
         const mode = dto.diceMode as any;
         const target = Number(dto.diceTarget);
 
@@ -262,7 +291,7 @@ export class GamesService {
         bet: updatedRound.betAmount.toString(),
         win: updatedRound.winAmount.toString(),
         currency: updatedRound.currency,
-        result: JSON.parse(updatedRound.result),
+        result: JSON.parse(updatedRound.result), // ✅ contient grid maintenant
         nonce: updatedRound.nonce,
         balance,
       };
