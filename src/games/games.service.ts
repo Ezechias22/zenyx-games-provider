@@ -1,22 +1,40 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+// src/games/games.service.ts
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { WalletService } from '../wallet/wallet.service';
 import { FairnessService } from './engine/fairness.service';
 import { sha256Hex } from '../common/security/crypto.util';
 
-import { SlotFruitStarService } from './slots/fruit_star/slot.service';
 import { CrashService } from './crash/crash.service';
 import { DiceService } from './dice/dice.service';
 
 import { GameInitNormalizedDto, GamePlayDto } from './dto/game.dto';
+
+import { EngineRegistry } from './core/registry';
+
+// ✅ Slot engines “config-based” (pas d’emoji)
+import { FRUIT_CLASSIC_ENGINE } from './slots/fruit_classic/slot.engine';
+import { EGYPT_RICHES_ENGINE } from './slots/egypt_riches/slot.engine';
+import { JUNGLE_WILD_ENGINE } from './slots/jungle_wild/slot.engine';
+import { LUXURY_GOLD_ENGINE } from './slots/luxury_gold/slot.engine';
+import { DIAMOND_RUSH_ENGINE } from './slots/diamond_rush/slot.engine';
+import { FIRE_REELS_ENGINE } from './slots/fire_reels/slot.engine';
+import { MYSTIC_FORTUNE_ENGINE } from './slots/mystic_fortune/slot.engine';
+
+import { mustGetCatalogItem } from './catalog';
 
 function stableNum(n: number): number {
   if (!Number.isFinite(n) || n < 0) throw new BadRequestException('Invalid number');
   return n;
 }
 
-// ✅ IDs EXACTS renvoyés par /v1/public/games (catalog) ou /v1/provider/games
+// ✅ IDs EXACTS renvoyés par /v1/public/games (catalog)
 const SLOT_GAMES = new Set([
   'fruit_classic',
   'egypt_riches',
@@ -32,19 +50,28 @@ const DICE_GAMES = new Set(['dice_over_under']);
 
 @Injectable()
 export class GamesService {
+  // ✅ Registry local des engines SLOT (même logique que ProviderService)
+  private slotRegistry = new EngineRegistry();
+
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
     private wallet: WalletService,
     private fairness: FairnessService,
 
-    // SLOT (ton slot actuel)
-    private slotFruit: SlotFruitStarService,
-
-    // ✅ nouveaux moteurs
+    // ✅ moteurs non-slot déjà en services
     private crash: CrashService,
     private dice: DiceService,
-  ) {}
+  ) {
+    // ✅ register des slots (IMPORTANT)
+    this.slotRegistry.register(FRUIT_CLASSIC_ENGINE);
+    this.slotRegistry.register(EGYPT_RICHES_ENGINE);
+    this.slotRegistry.register(JUNGLE_WILD_ENGINE);
+    this.slotRegistry.register(LUXURY_GOLD_ENGINE);
+    this.slotRegistry.register(DIAMOND_RUSH_ENGINE);
+    this.slotRegistry.register(FIRE_REELS_ENGINE);
+    this.slotRegistry.register(MYSTIC_FORTUNE_ENGINE);
+  }
 
   private kindOf(gameCode: string): 'SLOT' | 'CRASH' | 'DICE' {
     const code = (gameCode || '').trim();
@@ -89,28 +116,25 @@ export class GamesService {
 
     const bal = await this.wallet.getBalance(operatorId, playerExternalId, currency);
 
-    // rtp/volatility selon le type
-    const meta =
-      kind === 'SLOT'
-        ? { rtp: this.slotFruit.rtp, volatility: this.slotFruit.volatility }
-        : kind === 'CRASH'
-          ? { rtp: this.crash.rtp, volatility: this.crash.volatility }
-          : { rtp: this.dice.rtp, volatility: this.dice.volatility };
+    // ✅ meta propre par jeu (catalog)
+    const item = mustGetCatalogItem(gameCode);
 
     return {
       provider: 'ZENYX GAMES',
       roundId: round.id,
       gameCode,
       kind,
-      rtp: meta.rtp,
-      volatility: meta.volatility,
+      rtp: item.rtp,
+      volatility: item.volatility,
       fairness: { serverSeedHash },
       wallet: bal,
     };
   }
 
   async play(operatorId: string, dto: GamePlayDto) {
-    const round = await this.prisma.gameRound.findFirst({ where: { id: dto.roundId, operatorId } });
+    const round = await this.prisma.gameRound.findFirst({
+      where: { id: dto.roundId, operatorId },
+    });
     if (!round) throw new NotFoundException('Round not found');
     if (round.status !== 'CREATED') throw new BadRequestException('Round already played');
 
@@ -150,31 +174,48 @@ export class GamesService {
       const clientSeed = dto.clientSeed || round.clientSeed;
 
       // ---------- PLAY ----------
-      let playRes: { winAmount: number; roundResult: any };
+      let winAmount = 0;
+      let roundResult: any = {};
 
       if (kind === 'SLOT') {
-        playRes = this.slotFruit.play({
-          serverSeed: round.serverSeed,
+        // ✅ utiliser le vrai moteur du slot (pas fruit_star)
+        const engine: any = this.slotRegistry.get(round.gameCode);
+
+        const ctx: any = {
+          operatorId,
+          playerId: player.externalId,
+          currency: round.currency,
+          gameId: round.gameCode,
+          bet: String(bet),
           clientSeed,
+          serverSeed: round.serverSeed,
           nonce: nextNonce,
-          bet,
-        });
+          sessionData: {}, // (si tu ajoutes des features plus tard)
+        };
+
+        const action = { type: 'SPIN', payload: { roundId: round.id } };
+
+        const handled = await engine.handle(ctx, action);
+        // provider engines renvoient { result, nextSessionData }
+        roundResult = handled?.result ?? handled;
+        winAmount = Number(roundResult?.win ?? 0);
       } else if (kind === 'CRASH') {
         const cashoutAt = Number(dto.crashCashoutAt);
-        playRes = this.crash.play({
+        const playRes = this.crash.play({
           serverSeed: round.serverSeed,
           clientSeed,
           nonce: nextNonce,
           bet,
           cashoutAt,
         });
+        winAmount = Number(playRes.winAmount);
+        roundResult = playRes.roundResult;
       } else {
         // DICE
         const mode = dto.diceMode as any;
         const target = Number(dto.diceTarget);
 
-        // dice.play est async dans ton service wrapper
-        playRes = await this.dice.play({
+        const playRes = await this.dice.play({
           serverSeed: round.serverSeed,
           clientSeed,
           nonce: nextNonce,
@@ -183,9 +224,12 @@ export class GamesService {
           target,
           roundId: round.id,
         } as any);
+
+        winAmount = Number(playRes.winAmount);
+        roundResult = playRes.roundResult;
       }
 
-      const win = stableNum(playRes.winAmount);
+      const win = stableNum(winAmount);
 
       if (win > 0) {
         await this.wallet.credit(operatorId, player.externalId, round.currency, win, {
@@ -204,7 +248,7 @@ export class GamesService {
           nonce: nextNonce,
           status: 'SETTLED',
           settledAt: new Date(),
-          result: JSON.stringify(playRes.roundResult),
+          result: JSON.stringify(roundResult),
         },
       });
 
@@ -242,7 +286,9 @@ export class GamesService {
   }
 
   async verify(operatorId: string, roundId: string) {
-    const round = await this.prisma.gameRound.findFirst({ where: { id: roundId, operatorId } });
+    const round = await this.prisma.gameRound.findFirst({
+      where: { id: roundId, operatorId },
+    });
     if (!round) throw new NotFoundException('Round not found');
 
     return {
