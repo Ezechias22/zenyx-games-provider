@@ -40,6 +40,49 @@ function cleanBaseUrl(u: string) {
   return String(u || '').trim().replace(/\/+$/, '');
 }
 
+// ✅ Convertit symbols -> grid si nécessaire (compat game-server)
+function ensureSlotGrid(result: any) {
+  if (!result || result.type !== 'SLOT') return;
+
+  // déjà OK
+  if (result.grid) return;
+
+  const symbols = result.symbols;
+
+  // Cas 1: déjà une matrice 2D
+  if (Array.isArray(symbols) && Array.isArray(symbols[0])) {
+    result.grid = symbols;
+    return;
+  }
+
+  // Cas 2: tableau "flat" => essayer 5x3
+  if (Array.isArray(symbols) && symbols.length) {
+    const COLS = 5;
+    const ROWS = 3;
+
+    // Interprétation A: [col0r0, col0r1, col0r2, col1r0...]
+    const gridCols: any[] = [];
+    for (let c = 0; c < COLS; c++) {
+      const col = symbols.slice(c * ROWS, (c + 1) * ROWS);
+      if (col.length) gridCols.push(col);
+    }
+
+    if (gridCols.length === COLS && gridCols.every((c) => c.length === ROWS)) {
+      result.grid = gridCols;
+      return;
+    }
+
+    // Interprétation B: [row0c0, row0c1...]
+    const gridRows: any[] = [];
+    for (let r = 0; r < ROWS; r++) {
+      const row = symbols.slice(r * COLS, (r + 1) * COLS);
+      if (row.length) gridRows.push(row);
+    }
+
+    result.grid = gridRows;
+  }
+}
+
 @ApiTags('public')
 @ApiSecurity('x-public-token')
 @ApiSecurity('x-operator-key')
@@ -159,11 +202,16 @@ export class PublicController {
       throw new UnauthorizedException('Invalid or expired session');
     }
 
-    return this.games.play(operatorId, {
+    const data: any = await this.games.play(operatorId, {
       roundId: session.roundId,
       bet: dto.bet,
       clientSeed: dto.clientSeed,
       idempotencyKey: dto.idempotencyKey,
     });
+
+    // ✅ fix: compat pour game-server => ajouter result.grid si manquant
+    ensureSlotGrid(data?.result);
+
+    return data;
   }
 }
