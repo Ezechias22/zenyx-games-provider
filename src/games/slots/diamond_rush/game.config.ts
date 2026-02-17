@@ -13,7 +13,6 @@ export const DIAMOND_RUSH_CONFIG: SlotConfig = {
     wild: 'W',
     scatter: 'S',
   },
-  // Reel strips are theme-tuned; distribution controls RTP/volatility.
   reels: [
     ['A','K','Q','J','10','9','emerald','ruby','W','S','A','K','Q','J','10','9','emerald','A','K'],
     ['A','K','Q','J','10','9','emerald','ruby','W','S','A','K','Q','J','10','9','ruby','A','Q'],
@@ -32,10 +31,11 @@ export const DIAMOND_RUSH_CONFIG: SlotConfig = {
     ruby: { 3: 0.8, 4: 3.0, 5: 12 },
     W: { 3: 1.0, 4: 4.0, 5: 20 },
   },
+
+  // ✅ diamond_rush: seulement 4 scatters => 10 free spins
   scatterFreeSpins: {
-    3: 8,
-    4: 12,
-    5: 20,
+    4: 10,
   },
+
   freeSpinMultiplier: 2,
 };

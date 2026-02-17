@@ -13,7 +13,6 @@ export const LUXURY_GOLD_CONFIG: SlotConfig = {
     wild: 'W',
     scatter: 'S',
   },
-  // Reel strips are theme-tuned; distribution controls RTP/volatility.
   reels: [
     ['A','K','Q','J','10','9','diamond','crown','W','S','A','K','Q','J','10','9','diamond','A','K'],
     ['A','K','Q','J','10','9','diamond','crown','W','S','A','K','Q','J','10','9','crown','A','Q'],
@@ -32,10 +31,11 @@ export const LUXURY_GOLD_CONFIG: SlotConfig = {
     crown: { 3: 0.6, 4: 2.0, 5: 8 },
     W: { 3: 1.0, 4: 4.0, 5: 20 },
   },
+
+  // ✅ luxury_gold: seulement 3 scatters => 8 free spins
   scatterFreeSpins: {
     3: 8,
-    4: 12,
-    5: 20,
   },
+
   freeSpinMultiplier: 2,
 };

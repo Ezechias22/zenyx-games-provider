@@ -13,7 +13,6 @@ export const JUNGLE_WILD_CONFIG: SlotConfig = {
     wild: 'W',
     scatter: 'S',
   },
-  // Reel strips are theme-tuned; distribution controls RTP/volatility.
   reels: [
     ['A','K','Q','J','10','9','tiger','parrot','W','S','A','K','Q','J','10','9','tiger','A','K'],
     ['A','K','Q','J','10','9','tiger','parrot','W','S','A','K','Q','J','10','9','parrot','A','Q'],
@@ -32,10 +31,11 @@ export const JUNGLE_WILD_CONFIG: SlotConfig = {
     parrot: { 3: 0.8, 4: 3.0, 5: 12 },
     W: { 3: 1.0, 4: 4.0, 5: 20 },
   },
+
+  // ✅ jungle_wild: seulement 3 scatters => 8 free spins
   scatterFreeSpins: {
     3: 8,
-    4: 12,
-    5: 20,
   },
+
   freeSpinMultiplier: 2,
 };

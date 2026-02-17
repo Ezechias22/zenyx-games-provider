@@ -13,7 +13,6 @@ export const EGYPT_RICHES_CONFIG: SlotConfig = {
     wild: 'W',
     scatter: 'S',
   },
-  // Reel strips are theme-tuned; distribution controls RTP/volatility.
   reels: [
     ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG1','A','K'],
     ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG2','A','Q'],
@@ -22,20 +21,21 @@ export const EGYPT_RICHES_CONFIG: SlotConfig = {
     ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG1','10','A'],
   ],
   paytable: {
-    'A': { 3: 0.5, 4: 1.5, 5: 5 },
-    'K': { 3: 0.4, 4: 1.2, 5: 4 },
-    'Q': { 3: 0.3, 4: 1.0, 5: 3 },
-    'J': { 3: 0.25, 4: 0.8, 5: 2.5 },
+    A: { 3: 0.5, 4: 1.5, 5: 5 },
+    K: { 3: 0.4, 4: 1.2, 5: 4 },
+    Q: { 3: 0.3, 4: 1.0, 5: 3 },
+    J: { 3: 0.25, 4: 0.8, 5: 2.5 },
     '10': { 3: 0.2, 4: 0.6, 5: 2 },
     '9': { 3: 0.15, 4: 0.5, 5: 1.5 },
-    'EG1': { 3: 0.6, 4: 2.0, 5: 8 },
-    'EG2': { 3: 0.8, 4: 3.0, 5: 12 },
-    'W': { 3: 1.0, 4: 4.0, 5: 20 },
+    EG1: { 3: 0.6, 4: 2.0, 5: 8 },
+    EG2: { 3: 0.8, 4: 3.0, 5: 12 },
+    W: { 3: 1.0, 4: 4.0, 5: 20 },
   },
+
+  // ✅ egypt_riches: seulement 4 scatters => 12 free spins
   scatterFreeSpins: {
-    3: 8,
     4: 12,
-    5: 20,
   },
+
   freeSpinMultiplier: 2,
 };
