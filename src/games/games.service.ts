@@ -21,7 +21,6 @@ function stableNum(n: number): number {
   return n;
 }
 
-// ✅ IDs EXACTS renvoyés par /v1/public/games (catalog) ou /v1/provider/games
 const SLOT_GAMES = new Set([
   'fruit_classic',
   'egypt_riches',
@@ -42,10 +41,7 @@ export class GamesService {
     private redis: RedisService,
     private wallet: WalletService,
     private fairness: FairnessService,
-
-    // ✅ NEW: pour utiliser les vrais engines slots/crash/dice
     private providerSvc: ProviderService,
-
     private crash: CrashService,
     private dice: DiceService,
   ) {}
@@ -95,17 +91,14 @@ export class GamesService {
 
     const bal = await this.wallet.getBalance(operatorId, playerExternalId, currency);
 
-    // ✅ meta RTP: vient de l'engine enregistré (plus fiable)
+    // meta RTP (facultatif)
     let rtp = 0;
     let volatility: any = undefined;
 
     try {
       const engine = this.providerSvc.getEngine(gameCode);
       rtp = engine.rtp;
-      // volatility n'est pas dans l'interface engine -> laisse undefined
-      // (si tu veux volatility, on peut la prendre du catalog côté /public/games)
     } catch {
-      // fallback
       rtp =
         kind === 'CRASH'
           ? this.crash.rtp
@@ -141,7 +134,7 @@ export class GamesService {
     if (!locked) throw new BadRequestException('Spin in progress');
 
     try {
-      // Idempotency
+      // ✅ Idempotency (endpoint game/play)
       if (dto.idempotencyKey) {
         const requestHash = sha256Hex(JSON.stringify(dto));
         const existing = await this.prisma.idempotencyKey.findUnique({
@@ -155,57 +148,115 @@ export class GamesService {
         }
       }
 
-      // Debit bet
       const player = await this.prisma.player.findUnique({ where: { id: round.playerId } });
       if (!player) throw new BadRequestException('Player not found');
-
-      await this.wallet.debit(operatorId, player.externalId, round.currency, bet, {
-        idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:debit` : undefined,
-        referenceId: `round:${round.id}`,
-        meta: { gameCode: round.gameCode, kind },
-      });
 
       const nextNonce = round.nonce + 1;
       const clientSeed = dto.clientSeed || round.clientSeed;
 
-      // ---------- PLAY ----------
       let winAmount = 0;
       let roundResult: any = {};
 
+      // ------------------ SLOT ------------------
       if (kind === 'SLOT') {
-        // ✅ VRAI engine slot (egypt_riches, fruit_classic, ...)
         const engine = this.providerSvc.getEngine(round.gameCode);
+
+        // ✅ Load persistent slot session (FS state)
+        const ss = await this.prisma.slotSession.upsert({
+          where: {
+            operatorId_playerId_gameCode: {
+              operatorId,
+              playerId: player.id,
+              gameCode: round.gameCode,
+            },
+          },
+          update: {},
+          create: {
+            operatorId,
+            playerId: player.id,
+            gameCode: round.gameCode,
+            data: '{}',
+          },
+        });
+
+        let sessionData: any = {};
+        try {
+          sessionData = JSON.parse(ss.data || '{}');
+        } catch {
+          sessionData = {};
+        }
+
+        const fsRemainingBefore = Number(sessionData?.freeSpinsRemaining ?? 0);
+        const betCost = fsRemainingBefore > 0 ? 0 : bet;
+
+        // ✅ Debit only if not in free spins
+        if (betCost > 0) {
+          await this.wallet.debit(operatorId, player.externalId, round.currency, betCost, {
+            idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:debit` : undefined,
+            referenceId: `round:${round.id}`,
+            meta: { gameCode: round.gameCode, kind },
+          });
+        }
 
         const ctx: any = {
           operatorId,
           playerId: String(round.playerId),
           currency: round.currency,
           gameId: round.gameCode,
-          bet: bet.toFixed(8), // engine slot attend string
+          bet: bet.toFixed(8),
           clientSeed,
           serverSeed: round.serverSeed,
           nonce: nextNonce,
-          sessionData: {}, // (option: persister si tu veux le mode FS)
+          sessionData, // ✅ IMPORTANT for FS
         };
 
-        const { result } = await engine.handle(ctx, {
+        const { result, nextSessionData } = await engine.handle(ctx, {
           type: 'SPIN',
           payload: { roundId: round.id },
         });
 
-        // grid est dans l'event REELS_STOP
+        // ✅ Persist FS session
+        await this.prisma.slotSession.update({
+          where: {
+            operatorId_playerId_gameCode: {
+              operatorId,
+              playerId: player.id,
+              gameCode: round.gameCode,
+            },
+          },
+          data: { data: JSON.stringify(nextSessionData || {}) },
+        });
+
+        // Grid is in REELS_STOP
         const reelsStop = (result as any).events?.find((e: any) => e.t === 'REELS_STOP');
         const grid = reelsStop?.d?.grid ?? null;
 
-        // ✅ réponse compatible game-server
         winAmount = Number((result as any).win);
+
         roundResult = {
           type: 'SLOT',
           bet,
+          betCost, // ✅ 0 during FS
           win: winAmount,
-          grid, // ✅ IMPORTANT
+          grid,
+          events: (result as any).events ?? [],
+          freeSpins: {
+            before: fsRemainingBefore,
+            after: Number((nextSessionData as any)?.freeSpinsRemaining ?? 0),
+            active: Number((nextSessionData as any)?.freeSpinsRemaining ?? 0) > 0,
+            multiplier: Number((nextSessionData as any)?.freeSpinMultiplier ?? 1),
+          },
         };
-      } else if (kind === 'CRASH') {
+      }
+
+      // ------------------ CRASH ------------------
+      else if (kind === 'CRASH') {
+        await this.wallet.debit(operatorId, player.externalId, round.currency, bet, {
+          idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:debit` : undefined,
+          referenceId: `round:${round.id}`,
+          meta: { gameCode: round.gameCode, kind },
+        });
+
         const cashoutAt = Number((dto as any).crashCashoutAt);
         const playRes = this.crash.play({
           serverSeed: round.serverSeed,
@@ -214,10 +265,19 @@ export class GamesService {
           bet,
           cashoutAt,
         });
+
         winAmount = Number(playRes.winAmount);
         roundResult = playRes.roundResult;
-      } else {
-        // DICE
+      }
+
+      // ------------------ DICE ------------------
+      else {
+        await this.wallet.debit(operatorId, player.externalId, round.currency, bet, {
+          idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:debit` : undefined,
+          referenceId: `round:${round.id}`,
+          meta: { gameCode: round.gameCode, kind },
+        });
+
         const mode = (dto as any).diceMode as any;
         const target = Number((dto as any).diceTarget);
 
@@ -237,6 +297,7 @@ export class GamesService {
 
       const win = stableNum(winAmount);
 
+      // ✅ Credit win
       if (win > 0) {
         await this.wallet.credit(operatorId, player.externalId, round.currency, win, {
           idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:credit` : undefined,
@@ -245,10 +306,16 @@ export class GamesService {
         });
       }
 
+      // ✅ Store betAmount as REAL cost (0 if FS)
+      const betAmountToStore =
+        kind === 'SLOT' && typeof roundResult?.betCost === 'number'
+          ? (roundResult.betCost as number)
+          : bet;
+
       const updatedRound = await this.prisma.gameRound.update({
         where: { id: round.id },
         data: {
-          betAmount: bet.toFixed(8),
+          betAmount: betAmountToStore.toFixed(8),
           winAmount: win.toFixed(8),
           clientSeed,
           nonce: nextNonce,
@@ -273,6 +340,7 @@ export class GamesService {
         balance,
       };
 
+      // ✅ Save idempotency response
       if (dto.idempotencyKey) {
         await this.prisma.idempotencyKey.create({
           data: {
@@ -292,7 +360,9 @@ export class GamesService {
   }
 
   async verify(operatorId: string, roundId: string) {
-    const round = await this.prisma.gameRound.findFirst({ where: { id: roundId, operatorId } });
+    const round = await this.prisma.gameRound.findFirst({
+      where: { id: roundId, operatorId },
+    });
     if (!round) throw new NotFoundException('Round not found');
 
     return {

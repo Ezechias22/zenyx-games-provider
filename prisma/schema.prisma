@@ -26,14 +26,13 @@ model Operator {
   apiKey        String   @unique
   apiSecretHash String
   apiSecretEnc  String
-  ipWhitelist   String   @default("[]") // JSON array of CIDR/IP strings
+  ipWhitelist   String   @default("[]")
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  // Relations
   players      Player[]
-  wallets      Wallet[] // ✅ inverse of Wallet.operator
+  wallets      Wallet[]
   rounds       GameRound[]
   transactions Transaction[]
   auditLogs    AuditLog[]
@@ -43,16 +42,15 @@ model Operator {
 model Player {
   id         String   @id @default(uuid())
   operatorId String
-  externalId String // operator's player id
+  externalId String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   operator Operator @relation(fields: [operatorId], references: [id])
 
-  // Relations
   wallets      Wallet[]
-  transactions Transaction[] // ✅ inverse of Transaction.player
-  rounds       GameRound[] // ✅ inverse of GameRound.player
+  transactions Transaction[]
+  rounds       GameRound[]
 
   @@unique([operatorId, externalId])
 }
@@ -61,7 +59,7 @@ model Wallet {
   id         String   @id @default(uuid())
   operatorId String
   playerId   String
-  currency   String // ISO or token symbol e.g. USD, BRL, EUR, USDT
+  currency   String
   balance    Decimal  @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -69,7 +67,6 @@ model Wallet {
   operator Operator @relation(fields: [operatorId], references: [id])
   player   Player   @relation(fields: [playerId], references: [id])
 
-  // Relations
   txs Transaction[]
 
   @@unique([playerId, currency])
@@ -85,10 +82,10 @@ model Transaction {
   type           TxType
   status         TxStatus  @default(PENDING)
   amount         Decimal
-  referenceId    String? // external reference
+  referenceId    String?
   idempotencyKey String?
   roundId        String?
-  meta           String    @default("{}") // JSON string
+  meta           String    @default("{}")
   createdAt      DateTime  @default(now())
   appliedAt      DateTime?
 
@@ -107,12 +104,12 @@ model GameRound {
   betAmount      Decimal
   winAmount      Decimal   @default(0)
   currency       String
-  status         String    @default("CREATED") // CREATED, SETTLED, CANCELED
+  status         String    @default("CREATED")
   serverSeed     String
   serverSeedHash String
   clientSeed     String
   nonce          Int       @default(0)
-  result         String    @default("{}") // JSON string
+  result         String    @default("{}")
   createdAt      DateTime  @default(now())
   settledAt      DateTime?
 
@@ -150,4 +147,20 @@ model IdempotencyKey {
 
   @@unique([operatorId, key])
   @@index([operatorId, createdAt])
+}
+
+//
+// ✅ NEW: persistence de l’état FS pour les slots
+//
+model SlotSession {
+  id         String   @id @default(uuid())
+  operatorId String
+  playerId   String
+  gameCode   String
+  data       String   @default("{}")
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@unique([operatorId, playerId, gameCode])
+  @@index([operatorId, playerId, gameCode])
 }

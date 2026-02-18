@@ -1,41 +1,54 @@
 import { SlotConfig } from '../shared/slot.types';
-import { PAYLINES_20 } from '../shared/paylines.20';
 
 export const EGYPT_RICHES_CONFIG: SlotConfig = {
   id: 'egypt_riches',
   name: 'Egypt Riches',
   rtp: 0.96,
-  volatility: 'MEDIUM',
+  volatility: 'HIGH',
+
+  reels: [
+    ['A','K','Q','J','10','9','EG1','EG2','W','S'],
+    ['A','K','Q','J','10','9','EG1','EG2','W','S'],
+    ['A','K','Q','J','10','9','EG1','EG2','W','S'],
+    ['A','K','Q','J','10','9','EG1','EG2','W','S'],
+    ['A','K','Q','J','10','9','EG1','EG2','W','S'],
+  ],
+
   rows: 3,
-  paylines: PAYLINES_20,
+
+  paylines: [
+    [0,0,0,0,0],
+    [1,1,1,1,1],
+    [2,2,2,2,2],
+    [0,1,2,1,0],
+    [2,1,0,1,2],
+  ],
+
   symbols: {
     list: ['A','K','Q','J','10','9','EG1','EG2','W','S'],
     wild: 'W',
     scatter: 'S',
   },
-  reels: [
-    ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG1','A','K'],
-    ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG2','A','Q'],
-    ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG1','EG2','Q'],
-    ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG2','J','K'],
-    ['A','K','Q','J','10','9','EG1','EG2','W','S','A','K','Q','J','10','9','EG1','10','A'],
-  ],
+
   paytable: {
-    A: { 3: 0.5, 4: 1.5, 5: 5 },
-    K: { 3: 0.4, 4: 1.2, 5: 4 },
-    Q: { 3: 0.3, 4: 1.0, 5: 3 },
-    J: { 3: 0.25, 4: 0.8, 5: 2.5 },
-    '10': { 3: 0.2, 4: 0.6, 5: 2 },
-    '9': { 3: 0.15, 4: 0.5, 5: 1.5 },
-    EG1: { 3: 0.6, 4: 2.0, 5: 8 },
-    EG2: { 3: 0.8, 4: 3.0, 5: 12 },
-    W: { 3: 1.0, 4: 4.0, 5: 20 },
+    A: { 3: 5, 4: 10, 5: 20 },
+    K: { 3: 5, 4: 10, 5: 20 },
+    Q: { 3: 4, 4: 8, 5: 15 },
+    J: { 3: 3, 4: 6, 5: 12 },
+    '10': { 3: 3, 4: 6, 5: 12 },
+    '9': { 3: 2, 4: 5, 5: 10 },
+
+    EG1: { 3: 10, 4: 25, 5: 50 },
+    EG2: { 3: 15, 4: 40, 5: 80 },
+
+    W: { 3: 20, 4: 50, 5: 100 },
   },
 
-  // ✅ egypt_riches: seulement 4 scatters => 12 free spins
+  // 🎯 TA RÈGLE EXACTE
   scatterFreeSpins: {
-    4: 12,
+    4: 12,   // ✅ seulement 4 scatters = 12 free spins
   },
 
-  freeSpinMultiplier: 2,
+  freeSpinMultiplier: 2,   // 🔥 bonus Egypt x2 pendant FS
+  baseMultiplier: 1,
 };
