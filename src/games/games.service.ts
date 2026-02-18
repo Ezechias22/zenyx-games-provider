@@ -9,9 +9,12 @@ import { RedisService } from '../common/redis/redis.service';
 import { WalletService } from '../wallet/wallet.service';
 import { FairnessService } from './engine/fairness.service';
 import { sha256Hex } from '../common/security/crypto.util';
+import { fairnessU01 } from './core/fairness';
 
 import { CrashService } from './crash/crash.service';
 import { DiceService } from './dice/dice.service';
+
+import { JackpotService } from './jackpot/jackpot.service';
 
 import { GameInitNormalizedDto, GamePlayDto } from './dto/game.dto';
 import { ProviderService } from '../provider/provider.service';
@@ -44,6 +47,7 @@ export class GamesService {
     private providerSvc: ProviderService,
     private crash: CrashService,
     private dice: DiceService,
+    private jackpot: JackpotService,
   ) {}
 
   private kindOf(gameCode: string): 'SLOT' | 'CRASH' | 'DICE' {
@@ -186,6 +190,16 @@ export class GamesService {
           sessionData = {};
         }
 
+        if ((dto as any).buyFeature === 'FREE_SPINS') {
+          const cost = bet * 50; // 50x bet cost
+
+          await this.wallet.debit(operatorId, player.externalId, round.currency, cost, {
+            referenceId: `round:${round.id}`,
+          });
+
+          sessionData.freeSpinsRemaining = 10;
+        }
+
         const fsRemainingBefore = Number(sessionData?.freeSpinsRemaining ?? 0);
         const betCost = fsRemainingBefore > 0 ? 0 : bet;
 
@@ -196,6 +210,13 @@ export class GamesService {
             referenceId: `round:${round.id}`,
             meta: { gameCode: round.gameCode, kind },
           });
+        }
+
+        // ✅ Progressive Jackpot pool
+        await this.jackpot.ensurePool(round.gameCode);
+
+        if (betCost > 0) {
+          await this.jackpot.contribute(round.gameCode, betCost);
         }
 
         const ctx: any = {
@@ -233,11 +254,26 @@ export class GamesService {
 
         winAmount = Number((result as any).win);
 
+        const jackpotRes = await this.jackpot.tryHit(
+          round.gameCode,
+          round.serverSeed,
+          clientSeed,
+          nextNonce
+        );
+
+        if (jackpotRes.hit) {
+          winAmount += jackpotRes.amount;
+        }
+
         roundResult = {
           type: 'SLOT',
           bet,
           betCost, // ✅ 0 during FS
           win: winAmount,
+          jackpot: {
+            hit: jackpotRes.hit,
+            amount: jackpotRes.amount,
+          },
           grid,
           events: (result as any).events ?? [],
           freeSpins: {
@@ -295,7 +331,59 @@ export class GamesService {
         roundResult = playRes.roundResult;
       }
 
-      const win = stableNum(winAmount);
+      let win = stableNum(winAmount);
+      // ==========================
+      // 🎯 PROGRESSIVE JACKPOT (SLOT only)
+      // ==========================
+      if (kind === 'SLOT') {
+        const jp = await this.prisma.progressiveJackpot.upsert({
+          where: { gameCode: round.gameCode },
+          update: {},
+          create: {
+            gameCode: round.gameCode,
+            pool: 1000, // seed initial
+            hitRate: 0.00002, // 0.002%
+          },
+        });
+
+        const contribution = bet * 0.01; // 1% goes to jackpot
+
+        await this.prisma.progressiveJackpot.update({
+          where: { gameCode: round.gameCode },
+          data: {
+            pool: { increment: contribution },
+          },
+        });
+
+        // RNG deterministic jackpot trigger
+        const jpRoll = fairnessU01(round.serverSeed, clientSeed, nextNonce, 'jackpot');
+
+        if (jpRoll < Number(jp.hitRate)) {
+          const jackpotWin = Number(jp.pool);
+
+          win += jackpotWin;
+
+          await this.prisma.progressiveJackpot.update({
+            where: { gameCode: round.gameCode },
+            data: { pool: 1000 }, // reset
+          });
+
+          (roundResult as any).jackpot = {
+            won: true,
+            amount: jackpotWin,
+          };
+
+          (roundResult as any).events = [
+            ...(((roundResult as any).events) || []),
+            { t: 'BONUS_TRIGGER', ts: Date.now(), d: { type: 'JACKPOT', amount: jackpotWin } },
+          ];
+        } else {
+          (roundResult as any).jackpot = {
+            won: false,
+            pool: Number(jp.pool),
+          };
+        }
+      }
 
       // ✅ Credit win
       if (win > 0) {

@@ -150,7 +150,7 @@ model IdempotencyKey {
 }
 
 //
-// ✅ NEW: persistence de l’état FS pour les slots
+// ✅ Persistence état Free Spins (slots)
 //
 model SlotSession {
   id         String   @id @default(uuid())
@@ -163,4 +163,18 @@ model SlotSession {
 
   @@unique([operatorId, playerId, gameCode])
   @@index([operatorId, playerId, gameCode])
+}
+
+//
+// ✅ Progressive Jackpot (par jeu)
+//
+model ProgressiveJackpot {
+  id         String   @id @default(uuid())
+  gameCode   String
+  pool       Decimal  @default(0)
+  hitRate    Float    @default(0.00001) // 0.001% par spin
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@unique([gameCode])
 }

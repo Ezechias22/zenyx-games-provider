@@ -42,7 +42,11 @@ export class ProviderService {
 
   async getGameConfig(gameId: string) {
     const e = this.registry.get(gameId);
-    return { id: e.id, kind: e.kind, rtp: e.rtp };
+
+    const dynamicRtp = process.env[`RTP_${gameId.toUpperCase()}`];
+    const rtp = dynamicRtp ? Number(dynamicRtp) : e.rtp;
+
+    return { id: e.id, kind: e.kind, rtp };
   }
 
   async verifyFairness(params: {

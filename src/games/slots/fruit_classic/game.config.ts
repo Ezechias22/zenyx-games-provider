@@ -1,4 +1,4 @@
-// src/games/slots/fruit_classic/game.config.ts
+//  
 import { SlotConfig } from '../shared/slot.types';
 import { PAYLINES_20 } from '../shared/paylines.20';
 

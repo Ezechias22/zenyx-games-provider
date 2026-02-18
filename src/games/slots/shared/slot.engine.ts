@@ -1,7 +1,7 @@
 import { GameEngine, EngineAction, EngineContext } from '../../core/engine.interface';
 import { ZenyxEvent, ZenyxRoundResult } from '../../core/events';
 import { decMul } from '../../core/decimal';
-import { sha256Hex } from '../../core/fairness';
+import { sha256Hex, fairnessU01 } from '../../core/fairness';
 import { SlotConfig } from './slot.types';
 import { spinSlot } from './slot.math';
 
@@ -9,6 +9,12 @@ export class SlotGameEngine implements GameEngine {
   id: string;
   kind: 'SLOT' = 'SLOT';
   rtp: number;
+
+  // ✅ RTP Control ajouté
+  private rtpControl = {
+    enabled: true,
+    target: 0.96
+  };
 
   constructor(private config: SlotConfig) {
     this.id = config.id;
@@ -25,19 +31,15 @@ export class SlotGameEngine implements GameEngine {
     const events: ZenyxEvent[] = [];
     const serverSeedHash = sha256Hex(ctx.serverSeed);
 
-    // ---- session state ----
     const session = (ctx.sessionData && typeof ctx.sessionData === 'object') ? ctx.sessionData : {};
     const fsRemaining = Number(session.freeSpinsRemaining ?? 0);
     const inFS = fsRemaining > 0;
 
     const state = inFS ? 'FREE_SPINS' : 'NORMAL';
-
-    // bet locked during FS (if set), otherwise use ctx.bet
     const bet = inFS ? String(session.freeSpinBet ?? ctx.bet) : String(ctx.bet);
 
     events.push({ t: 'SPIN_START', ts: now, d: { state, bet } });
 
-    // tag changes RNG stream between base and FS
     const outcome = spinSlot(
       this.config,
       ctx.serverSeed,
@@ -51,11 +53,16 @@ export class SlotGameEngine implements GameEngine {
     // ---- wins ----
     let winMul = outcome.totalPayoutMul;
 
+    // 🎯 Dynamic RTP Adjustment
+    if (this.rtpControl.enabled) {
+      const adjustment = 0.98 + Math.random() * 0.04;
+      winMul = winMul * adjustment;
+    }
+
     for (const w of outcome.wins) {
       events.push({ t: 'WIN_LINE', ts: Date.now(), d: w });
     }
 
-    // ---- scatter -> free spins (by config) ----
     let nextSession: any = { ...session };
 
     const scatters = outcome.scatters;
@@ -69,7 +76,6 @@ export class SlotGameEngine implements GameEngine {
       });
 
       if (inFS) {
-        // retrigger
         nextSession.freeSpinsRemaining = Number(nextSession.freeSpinsRemaining ?? 0) + fsAward;
         events.push({
           t: 'FREE_SPINS_RETRIGGER',
@@ -77,9 +83,8 @@ export class SlotGameEngine implements GameEngine {
           d: { added: fsAward, remaining: nextSession.freeSpinsRemaining },
         });
       } else {
-        // start FS
         nextSession.freeSpinsRemaining = fsAward;
-        nextSession.freeSpinBet = bet; // lock bet for whole FS feature
+        nextSession.freeSpinBet = bet;
         nextSession.freeSpinMultiplier = Number(this.config.freeSpinMultiplier ?? 1);
 
         events.push({
@@ -90,7 +95,6 @@ export class SlotGameEngine implements GameEngine {
       }
     }
 
-    // ---- FS multiplier ----
     if (inFS) {
       const m = Number(this.config.freeSpinMultiplier ?? 1);
       if (m !== 1) {
@@ -106,15 +110,12 @@ export class SlotGameEngine implements GameEngine {
 
     const win = decMul(bet, winMul);
 
-    // ---- decrement FS after spin ----
     if (inFS) {
       const after = Math.max(0, Number(nextSession.freeSpinsRemaining ?? 0) - 1);
       nextSession.freeSpinsRemaining = after;
 
       if (after === 0) {
-        // cleanup (optional)
         delete nextSession.freeSpinBet;
-
         events.push({ t: 'FREE_SPINS_END', ts: Date.now(), d: {} });
       }
     }
@@ -142,6 +143,30 @@ export class SlotGameEngine implements GameEngine {
         nonce: ctx.nonce,
       },
     };
+
+    // 🎡 Random Bonus Wheel (rare)
+    const wheelRoll = fairnessU01(ctx.serverSeed, ctx.clientSeed, ctx.nonce, 'wheel');
+
+    if (wheelRoll < 0.01) {
+      const prizes = [2, 5, 10, 20];
+      const prize = prizes[Math.floor(wheelRoll * prizes.length)];
+
+      const bonusWin = decMul(bet, prize);
+
+      events.push({
+        t: 'BONUS_TRIGGER',
+        ts: Date.now(),
+        d: { type: 'WHEEL', multiplier: prize }
+      });
+
+      events.push({
+        t: 'BONUS_END',
+        ts: Date.now(),
+        d: { win: bonusWin }
+      });
+
+      result.win = String(Number(result.win) + Number(bonusWin));
+    }
 
     return { result, nextSessionData: nextSession };
   }

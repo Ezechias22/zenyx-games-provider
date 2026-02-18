@@ -36,6 +36,11 @@ export class GameInitDto {
   @IsOptional()
   @IsString()
   clientSeed?: string;
+
+  @IsOptional()
+  @IsString()
+  buyFeature?: 'FREE_SPINS';
+
 }
 
 // ✅ Type strict utilisé par le service

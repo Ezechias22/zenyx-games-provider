@@ -1,17 +1,20 @@
 // src/games/games.module.ts
-import { Module } from '@nestjs/common';
-import { GamesController } from './games.controller';
-import { GamesService } from './games.service';
+import { Module } from '@nestjs/common'
+import { GamesController } from './games.controller'
+import { GamesService } from './games.service'
 
-import { WalletModule } from '../wallet/wallet.module';
-import { EngineModule } from './engine/engine.module';
-import { OperatorModule } from '../operator/operator.module';
+import { WalletModule } from '../wallet/wallet.module'
+import { EngineModule } from './engine/engine.module'
+import { OperatorModule } from '../operator/operator.module'
 
-import { CrashService } from './crash/crash.service';
-import { DiceService } from './dice/dice.service';
+import { CrashService } from './crash/crash.service'
+import { DiceService } from './dice/dice.service'
 
 // ✅ NEW: pour pouvoir injecter ProviderService dans GamesService
-import { ProviderModule } from '../provider/provider.module';
+import { ProviderModule } from '../provider/provider.module'
+
+// ✅ NEW: Jackpot
+import { JackpotService } from './jackpot/jackpot.service'
 
 @Module({
   imports: [
@@ -21,12 +24,9 @@ import { ProviderModule } from '../provider/provider.module';
 
     // ✅ IMPORTANT
     ProviderModule,
-
-    // ❌ SlotFruitStarModule inutile maintenant (si tu n'utilises plus ce jeu)
-    // SlotFruitStarModule,
   ],
   controllers: [GamesController],
-  providers: [GamesService, CrashService, DiceService],
+  providers: [GamesService, CrashService, DiceService, JackpotService],
   exports: [GamesService],
 })
 export class GamesModule {}
