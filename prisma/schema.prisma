@@ -37,6 +37,7 @@ model Operator {
   transactions Transaction[]
   auditLogs    AuditLog[]
   idempotency  IdempotencyKey[]
+  settings     OperatorGameSettings[]
 }
 
 model Player {
@@ -150,8 +151,11 @@ model IdempotencyKey {
 }
 
 //
-// ✅ Persistence état Free Spins (slots)
+// ===============================
+// SLOT SESSION (Free Spins state)
+// ===============================
 //
+
 model SlotSession {
   id         String   @id @default(uuid())
   operatorId String
@@ -166,15 +170,45 @@ model SlotSession {
 }
 
 //
-// ✅ Progressive Jackpot (par jeu)
+// ===================================
+// PROGRESSIVE JACKPOT (multi-tier)
+// ===================================
 //
-model ProgressiveJackpot {
-  id         String   @id @default(uuid())
-  gameCode   String
-  pool       Decimal  @default(0)
-  hitRate    Float    @default(0.00001) // 0.001% par spin
-  updatedAt  DateTime @updatedAt
-  createdAt  DateTime @default(now())
 
-  @@unique([gameCode])
+model JackpotPool {
+  id         String   @id @default(uuid())
+  operatorId String
+  currency   String    // ⚠️ peut aussi être utilisé comme scopeKey (gameCode)
+  tier       String    // MINI | MINOR | MAJOR | GRAND
+  amount     Decimal   @default(0)
+  seed       Decimal   @default(0)
+  updatedAt  DateTime  @updatedAt
+  createdAt  DateTime  @default(now())
+
+  @@unique([operatorId, currency, tier], name: "operatorId_currency_tier")
+  @@index([operatorId, currency, tier])
+}
+
+//
+// =====================================
+// DYNAMIC SETTINGS PER OPERATOR/GAME
+// =====================================
+//
+
+model OperatorGameSettings {
+  id             String   @id @default(uuid())
+  operatorId     String
+  gameCode       String
+  targetRtp      Float    @default(0.96)
+  buyFsMul       Float    @default(100)
+  bonusChance    Float    @default(0.02)
+  jackpotRate    Float    @default(0.01)
+  jackpotChance  Float    @default(0.00001)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  operator Operator @relation(fields: [operatorId], references: [id])
+
+  @@unique([operatorId, gameCode])
+  @@index([operatorId, gameCode])
 }

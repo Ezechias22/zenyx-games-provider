@@ -1,4 +1,6 @@
+// src/games/slots/shared/slot.types.ts
 export type ReelStrip = string[]; // symbols
+
 export interface SlotConfig {
   id: string;
   name: string;
@@ -16,6 +18,34 @@ export interface SlotConfig {
   scatterFreeSpins: Record<number, number>; // scatters -> fs count
   baseMultiplier?: number; // optional
   freeSpinMultiplier?: number; // optional
+
+  // ✅ BUY FREE SPINS
+  buyFreeSpins?: {
+    enabled: boolean;
+    costMul: number; // price = bet * costMul
+    spins: number; // fs count
+    multiplier?: number; // optional override
+  };
+
+  // ✅ BONUS WHEEL
+  bonusWheel?: {
+    enabled: boolean;
+    // chance per spin (0..1) on PAID spins only
+    chance: number;
+    // list of multipliers applied to bet (weighted by repetition)
+    multipliers: number[];
+  };
+
+  // ✅ JACKPOT (progressif)
+  jackpot?: {
+    enabled: boolean;
+    seed: number; // initial meter value
+    contributionRate: number; // portion of bet to add (0..1)
+    // chance per PAID spin (0..1)
+    chance: number;
+    // max win cap multiplier on meter payout (safety)
+    maxPayout?: number;
+  };
 }
 
 export interface SpinOutcome {

@@ -1,4 +1,13 @@
-import { IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+// src/public/dto/public.dto.ts
+import {
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class PublicSessionDto {
   @IsString()
@@ -34,4 +43,23 @@ export class PublicPlayDto {
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
+
+  // =========================
+  // SLOT FEATURES
+  // =========================
+  @IsOptional()
+  @IsBoolean()
+  buyFreeSpins?: boolean;
+
+  // =========================
+  // GAMBLE (double or nothing)
+  // =========================
+  @IsOptional()
+  @IsBoolean()
+  gamble?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['RED', 'BLACK'])
+  gamblePick?: 'RED' | 'BLACK';
 }

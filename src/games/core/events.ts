@@ -1,3 +1,4 @@
+// src/games/core/events.ts
 export type ZenyxEventType =
   | 'SPIN_START'
   | 'REELS_STOP'
@@ -17,7 +18,16 @@ export type ZenyxEventType =
   | 'CASHOUT'
   | 'DICE_ROLL'
   | 'ROUND_END'
-  | 'FAIRNESS';
+  | 'FAIRNESS'
+  // ✅ NEW FEATURES
+  | 'BUY_FREE_SPINS'
+  | 'GAMBLE_START'
+  | 'GAMBLE_RESULT'
+  | 'BONUS_WHEEL_START'
+  | 'BONUS_WHEEL_RESULT'
+  | 'JACKPOT_METER_UPDATE'
+  | 'JACKPOT_WIN'
+  | 'RTP_APPLIED';
 
 export interface ZenyxEvent<T = any> {
   t: ZenyxEventType;

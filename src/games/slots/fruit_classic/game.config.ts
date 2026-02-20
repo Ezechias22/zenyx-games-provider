@@ -1,4 +1,4 @@
-//  
+// src/games/slots/fruit_classic/game.config.ts
 import { SlotConfig } from '../shared/slot.types';
 import { PAYLINES_20 } from '../shared/paylines.20';
 
@@ -35,10 +35,27 @@ export const FRUIT_CLASSIC_CONFIG: SlotConfig = {
     W: { 3: 1.0, 4: 4.0, 5: 20 },
   },
 
-  // ✅ fruit_classic: seulement 3 scatters => 8 free spins
-  scatterFreeSpins: {
-    3: 8,
+  scatterFreeSpins: { 3: 8 },
+  freeSpinMultiplier: 2,
+
+  buyFreeSpins: {
+    enabled: true,
+    costMul: 50, // bet * 50
+    spins: 8,
+    multiplier: 2,
   },
 
-  freeSpinMultiplier: 2,
+  bonusWheel: {
+    enabled: true,
+    chance: 0.01, // 1% per PAID spin
+    multipliers: [2, 2, 3, 3, 5, 8, 10],
+  },
+
+  jackpot: {
+    enabled: true,
+    seed: 50,
+    contributionRate: 0.01, // 1% of bet
+    chance: 0.0005, // 0.05% per PAID spin
+    maxPayout: 5000,
+  },
 };

@@ -1,3 +1,4 @@
+// src/games/core/engine.interface.ts
 import { ZenyxRoundResult } from './events';
 
 export interface EngineContext {
@@ -13,7 +14,7 @@ export interface EngineContext {
 }
 
 export interface EngineAction {
-  type: 'SPIN' | 'CRASH_START' | 'CRASH_CASHOUT' | 'DICE_ROLL';
+  type: 'SPIN' | 'CRASH_START' | 'CRASH_CASHOUT' | 'DICE_ROLL' | 'BUY_FS';
   payload?: any;
 }
 
@@ -21,5 +22,8 @@ export interface GameEngine {
   id: string;
   kind: 'SLOT' | 'CRASH' | 'DICE';
   rtp: number; // configured theoretical RTP, e.g., 0.96
-  handle(ctx: EngineContext, action: EngineAction): Promise<{ result: ZenyxRoundResult; nextSessionData: any }>;
+  handle(
+    ctx: EngineContext,
+    action: EngineAction,
+  ): Promise<{ result: ZenyxRoundResult; nextSessionData: any }>;
 }

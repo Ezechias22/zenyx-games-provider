@@ -1,4 +1,6 @@
+// src/games/dto/game.dto.ts
 import {
+  IsBoolean,
   IsIn,
   IsNumber,
   IsOptional,
@@ -36,11 +38,6 @@ export class GameInitDto {
   @IsOptional()
   @IsString()
   clientSeed?: string;
-
-  @IsOptional()
-  @IsString()
-  buyFeature?: 'FREE_SPINS';
-
 }
 
 // ✅ Type strict utilisé par le service
@@ -69,12 +66,31 @@ export class GamePlayDto {
   idempotencyKey?: string;
 
   // =========================
+  // SLOT FEATURES
+  // =========================
+  @IsOptional()
+  @IsBoolean()
+  buyFreeSpins?: boolean; // BUY FS (déclenche FS immédiatement)
+
+  // =========================
+  // GAMBLE (double or nothing)
+  // =========================
+  @IsOptional()
+  @IsBoolean()
+  gamble?: boolean; // fait un gamble sur le dernier win "gamblable"
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['RED', 'BLACK'])
+  gamblePick?: 'RED' | 'BLACK'; // optionnel (cosmétique)
+
+  // =========================
   // CRASH (crash_multiplier)
   // =========================
   @IsOptional()
   @IsNumber()
   @Min(1.01)
-  crashCashoutAt?: number; // ex: 1.50, 2.00
+  crashCashoutAt?: number;
 
   // =========================
   // DICE (dice_over_under)
@@ -88,5 +104,5 @@ export class GamePlayDto {
   @IsNumber()
   @Min(0.0001)
   @Max(99.9999)
-  diceTarget?: number; // ex: 49.5
+  diceTarget?: number;
 }
