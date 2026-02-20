@@ -7,12 +7,17 @@ import { PublicGuard } from './public.guard';
 import { PublicLaunchService } from './public.service';
 
 import { RedisModule } from '../common/redis/redis.module';
+import { PrismaModule } from '../common/prisma/prisma.module';   // ✅ ADD
+import { WalletModule } from '../wallet/wallet.module';          // ✅ ADD
+
 import { GamesModule } from '../games/games.module';
 import { OperatorModule } from '../operator/operator.module';
 
 @Module({
   imports: [
+    PrismaModule,   // ✅ pour PrismaService dans PublicController
     RedisModule,
+    WalletModule,   // ✅ pour WalletService dans PublicController
     GamesModule,
     OperatorModule, // ✅ pour PublicGuard -> OperatorService
   ],
