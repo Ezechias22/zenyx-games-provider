@@ -1,3 +1,4 @@
+// src/public/public.controller.ts
 import {
   BadRequestException,
   Body,
@@ -16,9 +17,11 @@ import * as fs from 'fs/promises';
 import { RedisService } from '../common/redis/redis.service';
 import { GamesService } from '../games/games.service';
 import { PublicGuard } from './public.guard';
-import { PublicPlayDto, PublicSessionDto } from './dto/public.dto';
+import { PublicPlayDto, PublicRechargeDto, PublicSessionDto } from './dto/public.dto';
 
 import { getCatalogList } from '../games/catalog';
+import { WalletService } from '../wallet/wallet.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 
 function randomId(): string {
   return randomBytes(16).toString('hex');
@@ -72,12 +75,6 @@ function normalizeGridToRows(grid: any): string[][] | null {
 
 /**
  * Mapping minimal pour éviter "Invalid symbol cell".
- * - Si la cell est déjà un filename (ex: "wild", "scatter", "cherry") => ok
- * - Si c'est "W"/"S" => map vers wild/scatter
- * - Si c'est vide => "unknown"
- *
- * NOTE: Si ton game-server attend des URL directes, tu peux switcher pour renvoyer des URL ici.
- * Pour l’instant, on renvoie des "keys" propres et stables.
  */
 function normalizeSymbolKey(cell: any): string {
   const v = String(cell ?? '').trim();
@@ -86,10 +83,7 @@ function normalizeSymbolKey(cell: any): string {
   if (v === 'W') return 'wild';
   if (v === 'S') return 'scatter';
 
-  // sécurité: éviter caractères cassés
-  // (on garde lettres/chiffres/_/-, sinon on met unknown)
-  if (!/^[a-zA-Z0-9_\-]+$/.test(v)) return v; // on ne casse pas si tu utilises EG1/EG2 etc.
-
+  if (!/^[a-zA-Z0-9_\-]+$/.test(v)) return v;
   return v;
 }
 
@@ -102,11 +96,12 @@ export class PublicController {
   constructor(
     private readonly redis: RedisService,
     private readonly games: GamesService,
+    private readonly wallet: WalletService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
    * GET /v1/public/games
-   * Catalogue public utilisé par le GAME SERVER (iframe).
    */
   @Get('games')
   async gamesList() {
@@ -140,13 +135,11 @@ export class PublicController {
 
   /**
    * POST /v1/public/session
-   * Crée session publique + renvoie launchUrl (DOIT POINTER VERS LE PROVIDER)
    */
   @Post('session')
   async createSession(@Body() dto: PublicSessionDto, @Req() req: any) {
     const operatorId = req.operator.id;
 
-    // 1) init round côté provider
     const initRes = await this.games.init(operatorId, {
       gameCode: dto.gameCode,
       playerExternalId: dto.playerExternalId,
@@ -154,7 +147,6 @@ export class PublicController {
       clientSeed: dto.clientSeed,
     });
 
-    // 2) session publique
     const sessionId = `sess_${randomId()}`;
     const ttl = Number(process.env.PUBLIC_SESSION_TTL_SEC || '3600');
 
@@ -169,7 +161,6 @@ export class PublicController {
 
     await this.redis.setJson(`public:session:${sessionId}`, payload, ttl);
 
-    // ✅ 3) launchUrl -> PROVIDER + /v1/launch (globalPrefix)
     const apiPrefix = (process.env.API_BASE_PATH || 'v1').replace(/^\/+/, '');
 
     const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -184,25 +175,13 @@ export class PublicController {
       );
     }
 
-    // IMPORTANT: /v1/launch (pas /launch)
-    const launchUrl = `${resolvedBase}/${apiPrefix}/launch?s=${encodeURIComponent(
-      sessionId,
-    )}`;
+    const launchUrl = `${resolvedBase}/${apiPrefix}/launch?s=${encodeURIComponent(sessionId)}`;
 
-    return {
-      sessionId,
-      launchUrl,
-      ttlSec: ttl,
-    };
+    return { sessionId, launchUrl, ttlSec: ttl };
   }
 
   /**
    * POST /v1/public/play
-   * Appelé UNIQUEMENT par le game-server.
-   *
-   * FIX IMPORTANT:
-   * - Si "Round already played", on recrée automatiquement un nouveau round pour le MÊME sessionId.
-   * - On normalise result.grid en 3x5 (lignes) et on nettoie les symbol keys.
    */
   @Post('play')
   async play(@Body() dto: PublicPlayDto, @Req() req: any) {
@@ -221,7 +200,7 @@ export class PublicController {
         bet: dto.bet,
         clientSeed: dto.clientSeed,
         idempotencyKey: dto.idempotencyKey,
-      });
+      } as any);
     };
 
     let res: any;
@@ -229,12 +208,8 @@ export class PublicController {
     try {
       res = await tryPlay(session.roundId);
     } catch (e: any) {
-      const msg =
-        e?.response?.message ||
-        e?.message ||
-        '';
+      const msg = e?.response?.message || e?.message || '';
 
-      // ✅ Si le round est déjà joué, on init un NOUVEAU round et on rejoue
       if (String(msg).includes('Round already played')) {
         const initRes = await this.games.init(operatorId, {
           gameCode: session.gameCode,
@@ -244,7 +219,11 @@ export class PublicController {
         });
 
         session.roundId = initRes.roundId;
-        await this.redis.setJson(key, session, Number(process.env.PUBLIC_SESSION_TTL_SEC || '3600'));
+        await this.redis.setJson(
+          key,
+          session,
+          Number(process.env.PUBLIC_SESSION_TTL_SEC || '3600'),
+        );
 
         res = await tryPlay(session.roundId);
       } else {
@@ -252,7 +231,6 @@ export class PublicController {
       }
     }
 
-    // Normalisation SLOT grid + symbols
     try {
       if (res?.kind === 'SLOT' && res?.result) {
         const grid = normalizeGridToRows(res.result.grid);
@@ -264,9 +242,50 @@ export class PublicController {
         }
       }
     } catch {
-      // no-op : on ne casse pas la réponse
+      // no-op
     }
 
     return res;
+  }
+
+  /**
+   * POST /v1/public/recharge
+   * Crédit wallet (utile pour tests / demo / game-server).
+   */
+  @Post('recharge')
+  async recharge(@Body() dto: PublicRechargeDto, @Req() req: any) {
+    const operatorId = req.operator.id;
+
+    const playerExternalId = String(dto.playerExternalId || '').trim();
+    const currency = String(dto.currency || '').trim();
+    const amount = Number(dto.amount);
+
+    if (!playerExternalId) throw new BadRequestException('playerExternalId is required');
+    if (!currency) throw new BadRequestException('currency is required');
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Invalid amount');
+
+    // ✅ S’assure que le player existe (sinon wallet.credit peut échouer)
+    await this.prisma.player.upsert({
+      where: { operatorId_externalId: { operatorId, externalId: playerExternalId } },
+      update: {},
+      create: { operatorId, externalId: playerExternalId },
+      select: { id: true },
+    });
+
+    await this.wallet.credit(operatorId, playerExternalId, currency, amount, {
+      idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}:recharge` : undefined,
+      referenceId: dto.idempotencyKey ? `recharge:${dto.idempotencyKey}` : `recharge:${randomId()}`,
+      meta: { type: 'PUBLIC_RECHARGE' },
+    });
+
+    const balance = await this.wallet.getBalance(operatorId, playerExternalId, currency);
+
+    return {
+      ok: true,
+      playerExternalId,
+      currency,
+      amount,
+      balance,
+    };
   }
 }

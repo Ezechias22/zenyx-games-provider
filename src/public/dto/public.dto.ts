@@ -63,3 +63,21 @@ export class PublicPlayDto {
   @IsIn(['RED', 'BLACK'])
   gamblePick?: 'RED' | 'BLACK';
 }
+
+export class PublicRechargeDto {
+  @IsString()
+  @MinLength(1)
+  playerExternalId!: string;
+
+  @IsString()
+  @MinLength(2)
+  currency!: string;
+
+  @IsNumber()
+  @Min(0.00000001)
+  amount!: number;
+
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
+}
