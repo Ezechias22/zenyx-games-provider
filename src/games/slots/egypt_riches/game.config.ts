@@ -49,6 +49,13 @@ export const EGYPT_RICHES_CONFIG: SlotConfig = {
     4: 12,   // ✅ seulement 4 scatters = 12 free spins
   },
 
+    buyFreeSpins: {
+    enabled: true,
+    costMul: 50,
+    spins: 12,
+    multiplier: 2,
+  },
+
   freeSpinMultiplier: 2,   // 🔥 bonus Egypt x2 pendant FS
   baseMultiplier: 1,
 };
