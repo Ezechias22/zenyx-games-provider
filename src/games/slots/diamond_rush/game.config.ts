@@ -37,5 +37,26 @@ export const DIAMOND_RUSH_CONFIG: SlotConfig = {
     4: 10,
   },
 
+  buyFreeSpins: {
+    enabled: true,
+    costMul: 50,
+    spins: 10,
+    multiplier: 2,
+  },
+
+  bonusWheel: {
+    enabled: true,
+    chance: 0.01, // 1% per PAID spin
+    multipliers: [2, 2, 3, 3, 5, 8, 10],
+  },
+
+  jackpot: {
+    enabled: true,
+    seed: 50,
+    contributionRate: 0.01, // 1% of bet
+    chance: 0.0005, // 0.05% per PAID spin
+    maxPayout: 5000,
+  },
+
   freeSpinMultiplier: 2,
 };

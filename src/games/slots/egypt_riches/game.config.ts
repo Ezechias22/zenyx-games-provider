@@ -53,7 +53,21 @@ export const EGYPT_RICHES_CONFIG: SlotConfig = {
     enabled: true,
     costMul: 50,
     spins: 12,
-    multiplier: 2,
+    multiplier: 5,
+  },
+
+  bonusWheel: {
+    enabled: true,
+    chance: 0.01, // 1% per PAID spin
+    multipliers: [2, 2, 3, 3, 5, 8, 10],
+  },
+
+  jackpot: {
+    enabled: true,
+    seed: 50,
+    contributionRate: 0.01, // 1% of bet
+    chance: 0.0005, // 0.05% per PAID spin
+    maxPayout: 5000,
   },
 
   freeSpinMultiplier: 2,   // 🔥 bonus Egypt x2 pendant FS
