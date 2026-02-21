@@ -200,6 +200,13 @@ export class PublicController {
         bet: dto.bet,
         clientSeed: dto.clientSeed,
         idempotencyKey: dto.idempotencyKey,
+
+        // ✅ SLOT FEATURES
+        buyFreeSpins: dto.buyFreeSpins,
+
+        // ✅ GAMBLE FEATURES
+        gamble: dto.gamble,
+        gamblePick: dto.gamblePick,
       } as any);
     };
 
